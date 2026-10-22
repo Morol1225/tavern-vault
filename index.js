@@ -1,6 +1,6 @@
-/* 储藏库 v0.3.0 | SillyTavern 原生扩展 | 无远程代码依赖 */
+/* 储藏库 v0.3.1 | SillyTavern 原生扩展 | 无远程代码依赖 */
 // src/core.js
-const VERSION = '0.3.0';
+const VERSION = '0.3.1';
 const PRODUCT = 'tavern-vault';
 const SCHEMA_VERSION = 1;
 const UNFILED = 'uncategorized';
@@ -717,9 +717,12 @@ function installEntrances(host, ui) {
       settingsRow = doc.createElement('div');
       settingsRow.id = 'tavern-vault-settings';
       settingsRow.dataset.tvOwned = 'settings';
+      settingsRow.style.cssText = 'display:flex;align-items:center;width:100%;min-width:0;box-sizing:border-box;';
       const button = doc.createElement('button');
       button.type = 'button';
       button.className = 'menu_button';
+      // The host uses width:min-content for menu_button; keep this CJK label on one line.
+      button.style.cssText = 'display:inline-flex;flex:0 0 auto;width:auto;min-width:max-content;white-space:nowrap;writing-mode:horizontal-tb;';
       button.textContent = '储藏库 · 打开收藏';
       button.setAttribute('aria-label', '从扩展设置打开储藏库');
       button.addEventListener('click', () => ui.open(button));

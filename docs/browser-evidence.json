@@ -1,30 +1,34 @@
 {
-  "date": "2026-10-22T17:11:27.365Z",
+  "date": "2026-10-22T20:21:18.886Z",
   "kind": "synthetic-browser",
-  "productVersion": "0.3.0",
+  "productVersion": "0.3.1",
   "browser": "151.0.7922.34",
   "realSillyTavern": false,
   "fileSystem": "in-memory FileSystemDirectoryHandle adapter",
   "build": {
-    "version": "0.3.0",
+    "version": "0.3.1",
     "deliveryMode": "extension",
     "kind": "sillytavern-ui-extension",
     "sources": {
-      "src/core.js": "f50373ea9610e48447c2935f13b7d68acff1e9e94fe87f6367eff4803b8f8b25",
+      "src/core.js": "6bf0837670358ce9dbcc64abf77f0a090b82f48527de8e488bb05d21906b9dc6",
       "src/storage.js": "99709e97e049b445c1458d4f76561a41e837fb608a21c8d55a317903447fa581",
       "src/capture.js": "5300921d8496572a24606dd3e1671b43ea7cf8b53e329dd373203ecd0d59f2f0",
       "src/selection.js": "e088b909b5c6a91f66969cbc972ab1ac6599ffef352f1dec68129d13951a1299",
-      "src/host.js": "ee6b1ccf95d6685a7f022bcbc9a608b02aa536b7ec51549292e7582eb4c8bbd7",
+      "src/host.js": "f2d74dc1752968210fd83a548f1d0b2950621412757a30465271e9172db29e71",
       "src/ui.js": "3c0f95b7225a5a0d8026aa44be8997230736490940547eaff2e86189e92f3651",
       "src/entry.js": "14699ec46e49cd2bd34c7660156da1890226edab5c0b9d386127ed3395186801",
       "src/ui.css": "0d49896bcf323280c685f163000993baff48dfbd4ec476e34af85dda29b5eacf"
     },
     "artifacts": {
-      "index.js": "fa2205e57c95d0140a72e0e4d0cfa9515395cba6f5d33c420d113400474fa2de",
-      "manifest.json": "48b881d13814fa74c27cc30508c3239706ab155f93c7e67848e69a6dce6c2a66"
+      "index.js": "8be994e45b76bdc400fe6a2771d45353a9baecd001e7cd4b06190342d161ddfe",
+      "manifest.json": "7b881f56146fd29781c6ca79dd4232fe82e4f19725c9d18cb15583cf8648a23d"
     }
   },
   "results": [
+    {
+      "name": "应用酒馆 min-content 按钮样式后，扩展设置入口保持一行并能打开储藏库",
+      "result": "passed"
+    },
     {
       "name": "不安装酒馆助手也能启动；禁用清理全部入口与事件，再启用不重复",
       "result": "passed"
@@ -113,6 +117,12 @@
       "client": 320
     }
   ],
+  "settingsLayout": {
+    "width": 121.65625,
+    "height": 33.1875,
+    "textLines": 1,
+    "whiteSpace": "nowrap"
+  },
   "nativeFs": {
     "confirmedEditRoundTrip": true,
     "oldContentRemoved": true,
@@ -125,11 +135,12 @@
     "userChosenExternalFolder": false
   },
   "screenshots": {
-    "collector-desktop.png": "016f7d3036fdb384af5d86b2e645d5c36cd8a42ed08f3653934fb6dafb3f71c3",
+    "collector-desktop.png": "7d8666211a3e3ee3127103a5c6746623a061855ff55a758738dd9e5ff45ace78",
     "editor-320.png": "7122a99bf2ba9e0d24e4389fd2a476e8de3e0512499d22b45662d272dbcc955d",
-    "editor-desktop.png": "ba4be8d54d95449534b7b7fd59483183f03675d0e51380d138cdfa586e26cae9",
-    "library-320.png": "1808afecf2b2c5061c0e1f8bf5957e4dc5577927ea3fdbe840c374a54a8e5574",
-    "library-390.png": "8eabac446daf815a3be0440c06791b78ec6bd02b5f7ec732ad0ac0b0fdd4e695",
-    "library-desktop.png": "08278893e18b98af16dbef9e16a11d46715b182b60deb053c0e66193ff8b00a9"
+    "editor-desktop.png": "760507f6410e3a95c3102531f6fffb57532f3a4a105ca992b40252481269c164",
+    "library-320.png": "77e6edf418669dae031b5a6911c1be2cf0fb0e1cd40f8fff990c54a99b859e40",
+    "library-390.png": "923462118b4bdba4ea38a0f7ed694100d51052f1c93a34a05d56bed435eba418",
+    "library-desktop.png": "0fbe4ac3ab92b6e0fcb6156325702a0808223c87f3a67293bcfa0c25d57ee399",
+    "settings-entry.png": "05963566b596069225a0feb541472f2c1663c07cdfce48cd71787c78586e491a"
   }
 }

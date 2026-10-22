@@ -34,6 +34,17 @@ try {
   assert.equal(await page.locator('#chat [data-tv-owned="floor"]').count(), 3);
   assert.equal(await page.evaluate(() => typeof window.TavernHelper), 'undefined');
   assert.equal(await page.locator('#tavern-vault-settings').count(), 1);
+  const settingsButton = page.getByRole('button', { name: '从扩展设置打开储藏库', exact: true });
+  const settingsLayout = await settingsButton.evaluate(element => {
+    const range = document.createRange(); range.selectNodeContents(element);
+    const rect = element.getBoundingClientRect();
+    return { width: rect.width, height: rect.height, textLines: range.getClientRects().length, whiteSpace: getComputedStyle(element).whiteSpace };
+  });
+  assert.equal(settingsLayout.textLines, 1, `扩展设置入口应横向显示：${JSON.stringify(settingsLayout)}`);
+  await page.locator('#extensions_settings2').screenshot({ path: path.join(evidenceRoot, 'settings-entry.png') });
+  await settingsButton.click();
+  await page.getByRole('button', { name: '关闭储藏库', exact: true }).click();
+  passed('应用酒馆 min-content 按钮样式后，扩展设置入口保持一行并能打开储藏库');
   const listenerCount = await page.evaluate(() => window.previewListenerCount());
   await page.getByRole('button', { name: '禁用扩展', exact: true }).click();
   assert.equal(await page.locator('#tavern-vault-root').count(), 0);
@@ -270,6 +281,9 @@ try {
     await narrow.setViewportSize({ width, height: 844 });
     narrow.on('pageerror', error => errors.push(error.message));
     await narrow.goto(url);
+    assert.equal(await narrow.getByRole('button', { name: '从扩展设置打开储藏库', exact: true }).evaluate(element => {
+      const range = document.createRange(); range.selectNodeContents(element); return range.getClientRects().length;
+    }), 1);
     await narrow.getByRole('button', { name: '收藏楼层 #1', exact: true }).click();
     const narrowForm = narrow.locator('#tavern-vault-root .sheet');
     await narrowForm.getByRole('button', { name: '选择文件夹', exact: true }).click();
@@ -358,9 +372,9 @@ try {
   await nativePage.close();
   passed('浏览器原生文件系统实际写入、重读与 IndexedDB 目录句柄恢复（不是外部文件夹授权）');
   const build = JSON.parse(await fs.readFile(path.join(root, 'dist/build-manifest.json'), 'utf8'));
-  const evidence = { date: new Date().toISOString(), kind: 'synthetic-browser', productVersion: '0.3.0', browser: browser.version(),
+  const evidence = { date: new Date().toISOString(), kind: 'synthetic-browser', productVersion: '0.3.1', browser: browser.version(),
     realSillyTavern: false, fileSystem: 'in-memory FileSystemDirectoryHandle adapter', build,
-    results, errors, dimensions, nativeFs, screenshots: {} };
+    results, errors, dimensions, settingsLayout, nativeFs, screenshots: {} };
   for (const name of await fs.readdir(evidenceRoot)) if (name.endsWith('.png')) {
     evidence.screenshots[name] = crypto.createHash('sha256').update(await fs.readFile(path.join(evidenceRoot, name))).digest('hex');
   }
