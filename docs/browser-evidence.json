@@ -1,27 +1,27 @@
 {
-  "date": "2026-10-22T16:44:49.496Z",
+  "date": "2026-10-22T17:11:27.365Z",
   "kind": "synthetic-browser",
-  "productVersion": "0.2.0",
+  "productVersion": "0.3.0",
   "browser": "151.0.7922.34",
   "realSillyTavern": false,
   "fileSystem": "in-memory FileSystemDirectoryHandle adapter",
   "build": {
-    "version": "0.2.0",
+    "version": "0.3.0",
     "deliveryMode": "extension",
     "kind": "sillytavern-ui-extension",
     "sources": {
-      "src/core.js": "5325f5cbb276250c812403b113dfdd4c9d9866a490bfa9d64e21ae0589239440",
-      "src/storage.js": "4f620cb01416be5b849aeb688b74662c2c8367de713d7db978efe11dfa25edaf",
-      "src/capture.js": "4c53f2fcad809aa509e25aca393be8c00cee131355ad6dc6ddefa9520a783d56",
+      "src/core.js": "f50373ea9610e48447c2935f13b7d68acff1e9e94fe87f6367eff4803b8f8b25",
+      "src/storage.js": "99709e97e049b445c1458d4f76561a41e837fb608a21c8d55a317903447fa581",
+      "src/capture.js": "5300921d8496572a24606dd3e1671b43ea7cf8b53e329dd373203ecd0d59f2f0",
       "src/selection.js": "e088b909b5c6a91f66969cbc972ab1ac6599ffef352f1dec68129d13951a1299",
       "src/host.js": "ee6b1ccf95d6685a7f022bcbc9a608b02aa536b7ec51549292e7582eb4c8bbd7",
-      "src/ui.js": "8bdea60f9e1b0342ffeee1d82f7b66858b9db8f03cdfd50759b7a864d501df58",
+      "src/ui.js": "3c0f95b7225a5a0d8026aa44be8997230736490940547eaff2e86189e92f3651",
       "src/entry.js": "14699ec46e49cd2bd34c7660156da1890226edab5c0b9d386127ed3395186801",
-      "src/ui.css": "30bac673a2799ef4c9a1e44d5ac6546ad3c15e41b2c4f2872e4b3131ae177856"
+      "src/ui.css": "0d49896bcf323280c685f163000993baff48dfbd4ec476e34af85dda29b5eacf"
     },
     "artifacts": {
-      "index.js": "6c638771ad101b75ae89c97512926071bede95d8692e4b9b2e9bc4d09c18c21e",
-      "manifest.json": "95b810eb1207d55895fa7eb7198fd689bb2b8ff6f4402311e47c094629a569c3"
+      "index.js": "fa2205e57c95d0140a72e0e4d0cfa9515395cba6f5d33c420d113400474fa2de",
+      "manifest.json": "48b881d13814fa74c27cc30508c3239706ab155f93c7e67848e69a6dce6c2a66"
     }
   },
   "results": [
@@ -70,6 +70,22 @@
       "result": "passed"
     },
     {
+      "name": "双击打开编辑；输入、失焦、Escape 和取消均不写入本地，重开仍为原内容",
+      "result": "passed"
+    },
+    {
+      "name": "HTML 正文双击进入源码编辑；确认后原文和交互页面同步、旧内容清除，页面按钮双击保持自身交互",
+      "result": "passed"
+    },
+    {
+      "name": "列表双击与原文双击均能编辑，重载后从同一文件夹恢复修改，外来消息不能打开编辑栏",
+      "result": "passed"
+    },
+    {
+      "name": "写入失败保留编辑草稿和原记录，清理失败单独提示且能重试完成",
+      "result": "passed"
+    },
+    {
       "name": "390px 和 320px 窄窗无管理界面横向溢出，可阅读 HTML、返回列表、按 Escape 关闭弹层",
       "result": "passed"
     },
@@ -98,6 +114,8 @@
     }
   ],
   "nativeFs": {
+    "confirmedEditRoundTrip": true,
+    "oldContentRemoved": true,
     "kind": "origin-private-file-system",
     "directoryHandleNative": true,
     "nativePermissionMethods": true,
@@ -107,9 +125,11 @@
     "userChosenExternalFolder": false
   },
   "screenshots": {
-    "collector-desktop.png": "c2636e3694c7a40808783219e061be7ddf56786da921dda8e4fc6804dd293077",
-    "library-320.png": "8314e4e18e68cca7c5da1322ad0392bac17d52d2a05a4717c8e8e513adf14800",
-    "library-390.png": "d0c502f923f353174aa015624686df0aa94078db08b0b51a9ea21bed34f7243e",
-    "library-desktop.png": "14560c4d8e514b801797cb460b3a9fbd300104d266006f3fc554364771a7f488"
+    "collector-desktop.png": "016f7d3036fdb384af5d86b2e645d5c36cd8a42ed08f3653934fb6dafb3f71c3",
+    "editor-320.png": "7122a99bf2ba9e0d24e4389fd2a476e8de3e0512499d22b45662d272dbcc955d",
+    "editor-desktop.png": "ba4be8d54d95449534b7b7fd59483183f03675d0e51380d138cdfa586e26cae9",
+    "library-320.png": "1808afecf2b2c5061c0e1f8bf5957e4dc5577927ea3fdbe840c374a54a8e5574",
+    "library-390.png": "8eabac446daf815a3be0440c06791b78ec6bd02b5f7ec732ad0ac0b0fdd4e695",
+    "library-desktop.png": "08278893e18b98af16dbef9e16a11d46715b182b60deb053c0e66193ff8b00a9"
   }
 }

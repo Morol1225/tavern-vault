@@ -1,4 +1,4 @@
-import { VERSION, UNFILED, sourceLabel, normalized, friendlyError, assert } from './core.js';
+import { VERSION, UNFILED, sourceLabel, normalized, friendlyError, assert, editToken } from './core.js';
 import { captureFloor, preparePreview } from './capture.js';
 import { selectDraft } from './selection.js';
 
@@ -55,8 +55,8 @@ const SHELL = `
         </div>
         <div class="reader-filled" hidden>
           <header class="reader-heading">
-            <div class="reader-tools"><button data-action="back-list" type="button" class="text-button back-list">${icon('arrow')}返回列表</button><span class="reader-category"></span><div class="reader-secondary"><button data-action="edit" type="button" class="text-button">整理</button><button data-action="expand" type="button" class="icon-button" aria-label="展开或还原阅读区" title="展开或还原阅读区">${icon('expand')}</button></div></div>
-            <h2 class="reader-title"></h2><p class="reader-origin"></p><p class="reader-date"></p>
+            <div class="reader-tools"><button data-action="back-list" type="button" class="text-button back-list">${icon('arrow')}返回列表</button><span class="reader-category"></span><div class="reader-secondary"><button data-action="edit-content" type="button" class="text-button">编辑内容</button><button data-action="edit" type="button" class="text-button">整理</button><button data-action="expand" type="button" class="icon-button" aria-label="展开或还原阅读区" title="展开或还原阅读区">${icon('expand')}</button></div></div>
+            <h2 class="reader-title"></h2><p class="reader-origin"></p><p class="reader-date"></p><div class="cleanup-note" hidden><span>新内容已保存，旧文件清理尚未完成。</span><button type="button" data-action="cleanup-content" class="text-button">重试清理</button></div>
           </header>
           <div class="viewbar"><div role="tablist" aria-label="收藏查看方式"><button type="button" role="tab" data-view="page" aria-selected="true">页面</button><button type="button" role="tab" data-view="original" aria-selected="false">原文</button><button type="button" role="tab" data-view="source" aria-selected="false">来源详情</button></div><button type="button" data-action="reload-page" class="text-button" title="重新运行当前页面" aria-label="重新运行当前页面">${icon('refresh')}</button></div>
           <div class="page-tools"><label>查看<select class="page-select" aria-label="选择 HTML 页面"></select></label><span>独立预览</span></div>
@@ -69,8 +69,13 @@ const SHELL = `
       <form class="sheet" role="dialog" aria-modal="true" aria-labelledby="tv-sheet-title">
         <header><span class="sheet-symbol">${icon('bookmark')}</span><div><h2 id="tv-sheet-title">收藏楼层</h2><p class="sheet-intro">保存此刻的内容，以后随时重读。</p></div><button type="button" data-action="cancel-form" class="icon-button" aria-label="关闭收藏栏">${icon('close')}</button></header>
         <p class="draft-source"></p><p class="draft-summary"></p>
-        <label class="field"><span class="title-label">收藏标题</span><input class="title-input" required maxlength="160" autocomplete="off"></label>
+        <label class="field title-field"><span class="title-label">收藏标题</span><input class="title-input" required maxlength="160" autocomplete="off"></label>
         <div class="category-fields"><label class="field">归入分类<select class="category-select"></select></label><button type="button" class="new-category-toggle text-button" data-action="toggle-category">${icon('plus')}新建分类</button><label class="field new-category-field" hidden>新分类名称<input class="new-category-input" maxlength="80" autocomplete="off" placeholder="例如：喜欢的剧情"></label></div>
+        <section class="editor-fields" hidden>
+          <p class="editor-help">编辑文字或 HTML 源码。点击“确认保存到本地”前只修改草稿；确认后替换本地内容，不保留旧版本。</p>
+          <label class="field">收藏内容<textarea class="body-input" aria-label="编辑收藏内容" spellcheck="false" rows="14" required disabled></textarea></label>
+          <p class="editor-state" role="status" aria-live="polite">内容尚未修改。</p>
+        </section>
         <section class="selection-fields" aria-label="收藏内容筛选">
           <div class="selection-heading"><h3>只留下想收藏的部分</h3><span>可选 · 留空保存整楼</span></div>
           <div class="selection-inputs"><label class="field">只提取这个标签内的内容<input class="include-tag-input" autocomplete="off" placeholder="例如：<content>" aria-describedby="tv-selection-help"></label><label class="field">再排除这些标签及其内容<input class="exclude-tags-input" autocomplete="off" placeholder="例如：<image>，thinking" aria-describedby="tv-selection-help"></label></div>
@@ -116,11 +121,21 @@ export class VaultUI {
     host.document.body.append(this.node);
     this.root.addEventListener('click', event => this.onClick(event));
     this.root.addEventListener('keydown', event => this.onKey(event));
+    this.root.addEventListener('dblclick', event => {
+      if (event.target.closest('[data-entry],.reader-title,.content pre')) this.openContentEditor();
+    });
+    this.previewMessage = event => {
+      const frame = this.$('.content iframe');
+      if (this.alive && this.visible && !this.busy && this.$('.sheet-veil').hidden && event.origin === 'null' &&
+        event.source === frame?.contentWindow && event.data?.type === 'tavern-vault:edit-content' &&
+        this.previewEditToken && event.data.token === this.previewEditToken) this.openContentEditor();
+    };
+    host.window.addEventListener('message', this.previewMessage);
     this.focusGuard = event => {
       if (!this.visible || !this.alive) return;
       const scope = this.focusScope();
       if (event.composedPath().includes(this.node) && scope.contains(this.root.activeElement)) return;
-      const first = Array.from(scope.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),[tabindex="0"]'))
+      const first = Array.from(scope.querySelectorAll('button:not(:disabled),input:not(:disabled),textarea:not(:disabled),select:not(:disabled),[tabindex="0"]'))
         .find(element => element.getClientRects().length > 0);
       (first || scope).focus();
     };
@@ -133,6 +148,9 @@ export class VaultUI {
       this.pageIndex = Number(event.target.value);
       this.readerKey = '';
       this.renderReader();
+    });
+    this.$('.body-input').addEventListener('input', () => {
+      this.text('.editor-state', this.$('.body-input').value === this.contentBaseline ? '内容尚未修改。' : '草稿尚未保存，确认后才会更新本地文件。');
     });
     this.$('.title-input').addEventListener('input', () => { this.titleEdited = true; });
     for (const selector of ['.include-tag-input', '.exclude-tags-input']) this.$(selector).addEventListener('input', () => this.updateSelection());
@@ -193,6 +211,7 @@ export class VaultUI {
     if (this.busy) return;
     this.$('.veil').hidden = true;
     this.$('.sheet-veil').hidden = true;
+    this.clearContentEditor();
     this.$('.number-veil').hidden = true;
     this.readerToken++;
     this.$('.content').replaceChildren();
@@ -252,7 +271,8 @@ export class VaultUI {
 
   updateDisabled() {
     this.root.querySelectorAll('button').forEach(button => { button.disabled = this.busy; });
-    this.$('.submit-button').textContent = this.busy ? '正在处理…' : (this.mode === 'category' ? '新建分类' : this.mode === 'edit' ? '保存整理' : '保存到文件夹');
+    this.$('.body-input').disabled = this.busy || this.mode !== 'content';
+    this.$('.submit-button').textContent = this.busy ? '正在处理…' : (this.mode === 'content' ? '确认保存到本地' : this.mode === 'category' ? '新建分类' : this.mode === 'edit' ? '保存整理' : '保存到文件夹');
   }
 
   async onClick(event) {
@@ -265,11 +285,18 @@ export class VaultUI {
     }
     const item = event.target.closest('[data-entry]');
     if (item) {
+      if (this.selectedId === item.dataset.entry && this.$('.surface').classList.contains('has-selection')) return;
       this.selectedId = item.dataset.entry;
       this.view = 'page';
       this.pageIndex = this.selected?.content.pages.length ? 0 : -1;
       this.$('.surface').classList.add('has-selection');
-      this.renderList();
+      // Keep list buttons mounted across the two clicks so native dblclick reaches the same target.
+      this.root.querySelectorAll('[data-entry]').forEach(button => {
+        const selected = button.dataset.entry === this.selectedId;
+        button.classList.toggle('selected', selected);
+        button.setAttribute('aria-pressed', String(selected));
+      });
+      this.renderReader();
       return;
     }
     const category = event.target.closest('[data-category]');
@@ -306,6 +333,12 @@ export class VaultUI {
       this.$('.category-select').disabled = !area.hidden;
       if (!area.hidden) this.$('.new-category-input').focus();
     }
+    if (action === 'edit-content') this.openContentEditor();
+    if (action === 'cleanup-content' && this.selected) this.withBusy(async () => {
+      await this.storage.cleanupContent(this.selected.id);
+      this.readerKey = '';
+      this.notice('旧内容已清理完成，只保留当前内容。');
+    });
     if (action === 'edit' && this.selected) this.showForm('edit', this.selected);
     if (action === 'reload-page') { this.readerKey = ''; this.renderReader(); }
     if (action === 'expand') this.$('.surface').classList.toggle('expanded');
@@ -338,7 +371,7 @@ export class VaultUI {
     }
     if (event.key === 'Tab') {
       const scope = this.focusScope();
-      const focusable = Array.from(scope.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),iframe,[tabindex="0"]')).filter(element => element.getClientRects().length > 0);
+      const focusable = Array.from(scope.querySelectorAll('button:not(:disabled),input:not(:disabled),textarea:not(:disabled),select:not(:disabled),iframe,[tabindex="0"]')).filter(element => element.getClientRects().length > 0);
       const first = focusable[0], last = focusable.at(-1);
       if (event.shiftKey && (this.root.activeElement === first || !scope.contains(this.root.activeElement))) { event.preventDefault(); last?.focus(); }
       if (!event.shiftKey && (this.root.activeElement === last || !scope.contains(this.root.activeElement))) { event.preventDefault(); first?.focus(); }
@@ -356,10 +389,33 @@ export class VaultUI {
     catch (error) { this.showError(error); }
   }
 
+  openContentEditor() {
+    if (this.busy || !this.visible || !this.selected || !this.$('.sheet-veil').hidden || !this.$('.number-veil').hidden) return;
+    this.showForm('content', this.selected);
+  }
+
+  clearContentEditor() {
+    this.$('.body-input').value = '';
+    this.contentBaseline = '';
+    this.originalEditText = '';
+    this.expectedEditToken = null;
+    this.editLibraryId = null;
+    if (this.mode === 'content') this.draft = null;
+  }
+
   showForm(mode, draft = null) {
     this.formOpener = this.root.activeElement;
     this.mode = mode;
     this.draft = draft;
+    this.$('.sheet').classList.toggle('content-editor', mode === 'content');
+    this.$('.editor-fields').hidden = mode !== 'content';
+    this.$('.title-field').hidden = mode === 'content';
+    this.$('.body-input').value = mode === 'content' ? draft.original : '';
+    this.contentBaseline = this.$('.body-input').value;
+    this.originalEditText = mode === 'content' ? draft.original : '';
+    this.expectedEditToken = mode === 'content' ? editToken(draft) : null;
+    this.editLibraryId = mode === 'content' ? this.storage.meta?.libraryId : null;
+    this.text('.editor-state', '内容尚未修改。');
     this.titleEdited = false;
     this.filteredDraft = null;
     this.selectionError = null;
@@ -371,25 +427,25 @@ export class VaultUI {
     this.$('.new-category-field').hidden = true;
     this.$('.new-category-input').value = '';
     this.$('.category-select').disabled = false;
-    this.$('.category-fields').hidden = mode === 'category';
+    this.$('.category-fields').hidden = mode === 'category' || mode === 'content';
     this.$('.draft-source').hidden = mode === 'category';
     this.$('.draft-summary').hidden = mode === 'category';
-    this.text('#tv-sheet-title', mode === 'category' ? '新建分类' : mode === 'edit' ? '整理收藏' : '收藏楼层');
-    this.text('.sheet-intro', mode === 'category' ? '给喜欢的内容一个安放的位置。' : '内容与来源一同保存，原聊天保持不变。');
+    this.text('#tv-sheet-title', mode === 'category' ? '新建分类' : mode === 'content' ? '编辑收藏内容' : mode === 'edit' ? '整理收藏' : '收藏楼层');
+    this.text('.sheet-intro', mode === 'category' ? '给喜欢的内容一个安放的位置。' : mode === 'content' ? '确认保存后，同步到原收藏文件夹。' : '内容与来源一同保存，原聊天保持不变。');
     this.text('.title-label', mode === 'category' ? '分类名称' : '收藏标题');
     const input = this.$('.title-input');
     input.maxLength = mode === 'category' ? 80 : 160;
-    input.value = mode === 'new' ? draft.suggestedTitle : mode === 'edit' ? draft.title : '';
+    input.value = mode === 'new' ? draft.suggestedTitle : ['edit', 'content'].includes(mode) ? draft.title : '';
     if (draft) {
       this.text('.draft-source', sourceLabel(draft.source));
       this.text('.draft-summary', `${draft.source.speakerName || '未取得发言者'} · 消息版本 ${draft.source.swipeId + 1} · ${(draft.original || '').length.toLocaleString()} 字符`);
     }
     if (mode === 'new') this.updateSelection();
-    this.populateCategorySelect(mode === 'edit' ? draft.categoryId : this.category);
+    this.populateCategorySelect(['edit', 'content'].includes(mode) ? draft.categoryId : this.category);
     this.renderConnection();
     this.updateDisabled();
-    input.focus();
-    input.select();
+    if (mode === 'content') this.$('.body-input').focus();
+    else { input.focus(); input.select(); }
   }
 
   populateCategorySelect(selected) {
@@ -408,6 +464,7 @@ export class VaultUI {
   hideForm() {
     if (this.busy) return;
     this.$('.sheet-veil').hidden = true;
+    this.clearContentEditor();
     this.formOpener?.focus?.();
   }
 
@@ -451,6 +508,17 @@ export class VaultUI {
         assert(title, '请填写分类名称。');
         this.category = await this.storage.addCategory(title);
         this.notice('分类已保存到文件夹。');
+      } else if (this.mode === 'content') {
+        const input = this.$('.body-input').value;
+        // Textareas normalize CRLF on read. Preserve the exact file if the visible text was not edited.
+        const original = input === this.contentBaseline ? this.originalEditText : input;
+        const result = await this.storage.updateContent(this.draft.id, original, { expectedToken: this.expectedEditToken, expectedLibraryId: this.editLibraryId, confirmed: true });
+        this.selectedId = result.entry.id;
+        this.category = '*';
+        this.view = 'page';
+        this.pageIndex = result.entry.content.pages.length ? 0 : -1;
+        this.notice(result.unchanged ? '内容没有变化，本地文件未改动。' : result.cleanupPending ? '新内容已保存，但旧文件尚未清理完；请在阅读区重试清理。' : '修改已确认保存到本地，旧内容已清理。', result.cleanupPending);
+        this.clearContentEditor();
       } else if (this.mode === 'edit') {
         await this.storage.edit(this.draft.id, options);
         this.category = '*';
@@ -572,14 +640,16 @@ export class VaultUI {
     this.$('.reader-empty').hidden = Boolean(entry);
     this.$('.reader-filled').hidden = !entry;
     if (!entry) { this.readerToken++; this.$('.content').replaceChildren(); this.readerKey = ''; return; }
-    const key = `${entry.id}:${entry.updatedAt}:${this.view}:${this.pageIndex}`;
+    this.$('.cleanup-note').hidden = !entry.cleanup;
+    const key = `${entry.id}:${entry.updatedAt}:${entry.content.storageId || ''}:${this.view}:${this.pageIndex}`;
     if (key === this.readerKey) return;
     this.readerKey = key;
     const token = ++this.readerToken;
+    this.previewEditToken = null;
     this.text('.reader-title', entry.title);
     this.text('.reader-category', this.storage.meta?.categories.find(category => category.id === entry.categoryId)?.name || '分类已缺失');
     this.text('.reader-origin', sourceLabel(entry.source));
-    this.text('.reader-date', `${entry.source.speakerName || '未取得发言者'} · 收藏于 ${new Date(entry.savedAt).toLocaleString('zh-CN', { hour12: false })}`);
+    this.text('.reader-date', `${entry.source.speakerName || '未取得发言者'} · 收藏于 ${new Date(entry.savedAt).toLocaleString('zh-CN', { hour12: false })}${entry.editedAt ? ' · 已编辑' : ''}`);
     this.root.querySelectorAll('[data-view]').forEach(button => button.setAttribute('aria-selected', String(button.dataset.view === this.view)));
     this.$('.page-tools').hidden = this.view !== 'page';
     this.$('[data-action="reload-page"]').hidden = this.view !== 'page';
@@ -599,6 +669,7 @@ export class VaultUI {
         ['收藏时间', new Date(entry.savedAt).toLocaleString('zh-CN', { hour12: false })],
         ['捕获时间', entry.source.capturedAt ? new Date(entry.source.capturedAt).toLocaleString('zh-CN', { hour12: false }) : '未取得'],
         ['酒馆版本', entry.source.tavernVersion || '未取得'], ['储藏库版本', entry.source.vaultVersion || '未取得']];
+      if (entry.editedAt) fields.push(['内容编辑时间', new Date(entry.editedAt).toLocaleString('zh-CN', { hour12: false })]);
       if (entry.source.helperVersion) fields.push(['原收藏的酒馆助手版本', entry.source.helperVersion]);
       if (entry.source.selection) {
         const rules = entry.source.selection;
@@ -611,7 +682,7 @@ export class VaultUI {
       }
       content.append(dl);
       const note = this.host.document.createElement('p'); note.className = 'source-note';
-      note.textContent = '这是收藏时的来源记录。原聊天之后改名、删楼或删除，不会改动此处保存的记录和原文。';
+      note.textContent = '这里记录收藏时的聊天来源。收藏内容可单独编辑；原聊天之后改名或删除，不会自动改动本地收藏。';
       content.append(note); return;
     }
     const select = this.$('.page-select'); select.replaceChildren();
@@ -629,7 +700,8 @@ export class VaultUI {
       frame.title = `${entry.title} — ${this.pageIndex === -1 ? '显示快照' : entry.content.pages[this.pageIndex].label}`;
       frame.setAttribute('sandbox', 'allow-scripts');
       frame.setAttribute('referrerpolicy', 'no-referrer');
-      frame.srcdoc = preparePreview(html, entry.source.origin || '', this.host.document);
+      this.previewEditToken = this.host.window.crypto.randomUUID();
+      frame.srcdoc = preparePreview(html, entry.source.origin || '', this.host.document, { token: this.previewEditToken, targetOrigin: this.host.window.location.origin });
       content.replaceChildren(frame);
       const notes = entry.content.warnings || [];
       if (notes.length) { this.text('.page-notes', notes.join(' ')); this.$('.page-notes').hidden = false; }
@@ -646,6 +718,8 @@ export class VaultUI {
     this.alive = false;
     this.readerToken++;
     this.host.document.removeEventListener('focusin', this.focusGuard, true);
+    this.host.window.removeEventListener('message', this.previewMessage);
+    this.clearContentEditor();
     this.node.remove();
   }
 }

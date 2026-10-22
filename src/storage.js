@@ -1,4 +1,4 @@
-import { PRODUCT, SCHEMA_VERSION, UNFILED, META_FILE, assert, normalized, safeId, newId, digest, validateMeta, validateEntry, sameSnapshot } from './core.js';
+import { PRODUCT, SCHEMA_VERSION, UNFILED, META_FILE, assert, normalized, safeId, newId, digest, validateMeta, validateEntry, sameSnapshot, extractHtmlPages, editToken } from './core.js';
 
 async function readFile(directory, name) {
   return (await (await directory.getFileHandle(name)).getFile()).text();
@@ -7,6 +7,17 @@ async function readFile(directory, name) {
 async function optionalFile(directory, name) {
   try { return await readFile(directory, name); }
   catch (error) { if (error.name === 'NotFoundError') return null; throw error; }
+}
+
+async function contentDirectory(directory, entry) {
+  return entry.content.storageId
+    ? (await directory.getDirectoryHandle('content')).getDirectoryHandle(entry.content.storageId)
+    : directory;
+}
+
+async function removeIfPresent(directory, name, options) {
+  try { await directory.removeEntry(name, options); }
+  catch (error) { if (error.name !== 'NotFoundError') throw error; }
 }
 
 async function writeFile(directory, name, text) {
@@ -88,7 +99,7 @@ export class VaultStorage {
         const raw = await optionalFile(directory, 'entry.json');
         if (raw === null) { issues.push({ id: directory.name, message: '未完成的收藏，已略过' }); return null; }
         const record = validateEntry(JSON.parse(raw), directory.name);
-        const original = await readFile(directory, 'original.txt');
+        const original = await readFile(await contentDirectory(directory, record), 'original.txt');
         assert(await digest(original) === record.content.originalSha256, '原文已变动，校验不一致');
         return { ...record, original };
       } catch (error) {
@@ -188,9 +199,109 @@ export class VaultStorage {
     });
   }
 
+  async updateContent(id, original, { expectedToken, expectedLibraryId, confirmed = false } = {}) {
+    assert(confirmed === true, '尚未确认保存，磁盘内容未修改。');
+    assert(typeof original === 'string' && original.trim(), '收藏内容不能为空。');
+    return this.mutate(async () => {
+      assert(expectedLibraryId === this.meta.libraryId, '编辑期间更换了收藏库，尚未保存。请连接原收藏文件夹后重试。');
+      assert(safeId(id), '收藏编号无效。');
+      const directory = await (await this.directory.getDirectoryHandle('items')).getDirectoryHandle(id);
+      const before = await readFile(directory, 'entry.json');
+      const record = validateEntry(JSON.parse(before), id);
+      assert(expectedToken === editToken(record), '这条收藏已在别处修改，请取消编辑并重新读取后再修改；当前草稿尚未保存。');
+      const prior = await readFile(await contentDirectory(directory, record), 'original.txt');
+      assert(await digest(prior) === record.content.originalSha256, '本地原文已被外部修改，已停止保存。请先重新读取并检查。');
+      if (original === prior) return { entry: { ...record, original }, unchanged: true, cleanupPending: Boolean(record.cleanup) };
+      assert(typeof directory.removeEntry === 'function', '浏览器无法清理旧内容，已停止保存。请更新电脑 Chrome/Edge 后重试。');
+      const storageId = newId();
+      const content = await directory.getDirectoryHandle('content', { create: true });
+      const staging = await content.getDirectoryHandle(storageId, { create: true });
+      const pages = extractHtmlPages(original);
+      const escaped = original.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+      const now = new Date().toISOString();
+      const next = { ...record, schemaVersion: 2, updatedAt: now, editedAt: now,
+        content: { ...record.content, storageId, originalSha256: await digest(original),
+          pages: pages.map((page, index) => ({ file: `pages/page-${index + 1}.html`, label: page.label, kind: page.kind })),
+          warnings: ['此内容由你编辑后保存，显示副本和 HTML 页面均按修改后的原文生成。',
+            ...(pages.length ? ['页面自身交互可用；依赖酒馆或外部资源的功能可能无法运行。'] : [])] },
+        cleanup: { legacyPageCount: record.content.storageId ? (record.cleanup?.legacyPageCount ?? -1) : record.content.pages.length } };
+      validateEntry(next, id);
+      let commitAttempted = false;
+      try {
+        await writeFile(staging, '.owned.json', JSON.stringify({ product: PRODUCT, entryId: id, storageId }));
+        await writeFile(staging, 'original.txt', original);
+        await writeFile(staging, 'rendered.html', `<pre style="white-space:pre-wrap">${escaped}</pre>`);
+        if (pages.length) {
+          const pageDirectory = await staging.getDirectoryHandle('pages', { create: true });
+          for (const [index, page] of pages.entries()) await writeFile(pageDirectory, `page-${index + 1}.html`, page.html);
+        }
+        assert(await readFile(directory, 'entry.json') === before, '保存期间收藏已在别处修改，已停止提交，请重新读取。');
+        // A single closed file selects the complete content set. Old content is untouched until this commit.
+        commitAttempted = true;
+        await writeFile(directory, 'entry.json', JSON.stringify(next, null, 2));
+      } catch (error) {
+        // If closing the marker succeeded but readback failed, the new set might already be active.
+        // Never delete it when the commit outcome is uncertain.
+        if (!commitAttempted) { try { await content.removeEntry(storageId, { recursive: true }); } catch { /* Report original error. */ } }
+        if (commitAttempted) throw new Error('保存结果尚未确认，请重新授权并重新读取收藏，确认当前内容后再编辑；当前草稿仍保留。', { cause: error });
+        throw error;
+      }
+      let active = next;
+      let cleanupPending = false;
+      try { active = await this.finishContentCleanup(directory, next); }
+      catch { cleanupPending = true; }
+      const entry = { ...active, original };
+      const at = this.entries.findIndex(value => value.id === id);
+      if (at >= 0) this.entries[at] = entry;
+      return { entry, unchanged: false, cleanupPending };
+    });
+  }
+
+  async finishContentCleanup(directory, record) {
+    if (!record.cleanup) return record;
+    const current = validateEntry(JSON.parse(await readFile(directory, 'entry.json')), record.id);
+    assert(editToken(current) === editToken(record), '收藏已变化，请重新读取后重试清理。');
+    const content = await directory.getDirectoryHandle('content');
+    for await (const handle of content.values()) {
+      if (handle.kind !== 'directory' || !safeId(handle.name) || handle.name === record.content.storageId) continue;
+      const owner = await optionalFile(handle, '.owned.json');
+      if (!owner) continue;
+      let marker;
+      try { marker = JSON.parse(owner); } catch { continue; }
+      if (marker.product === PRODUCT && marker.entryId === record.id && marker.storageId === handle.name) {
+        await content.removeEntry(handle.name, { recursive: true });
+      }
+    }
+    if (record.cleanup.legacyPageCount >= 0) {
+      await removeIfPresent(directory, 'original.txt');
+      await removeIfPresent(directory, 'rendered.html');
+      let pages;
+      try { pages = await directory.getDirectoryHandle('pages'); }
+      catch (error) { if (error.name !== 'NotFoundError') throw error; }
+      if (pages) for (let index = 0; index < record.cleanup.legacyPageCount; index++) await removeIfPresent(pages, `page-${index + 1}.html`);
+    }
+    const clean = { ...record };
+    delete clean.cleanup;
+    await writeFile(directory, 'entry.json', JSON.stringify(clean, null, 2));
+    return clean;
+  }
+
+  cleanupContent(id) {
+    return this.mutate(async () => {
+      assert(safeId(id), '收藏编号无效。');
+      const directory = await (await this.directory.getDirectoryHandle('items')).getDirectoryHandle(id);
+      const record = validateEntry(JSON.parse(await readFile(directory, 'entry.json')), id);
+      const clean = await this.finishContentCleanup(directory, record);
+      const local = this.entries.find(entry => entry.id === id);
+      if (local) { delete local.cleanup; Object.assign(local, clean); }
+      return clean;
+    });
+  }
+
   async readPage(entry, index = -1) {
     validateEntry(entry, entry.id);
-    const directory = await (await this.directory.getDirectoryHandle('items')).getDirectoryHandle(entry.id);
+    const item = await (await this.directory.getDirectoryHandle('items')).getDirectoryHandle(entry.id);
+    const directory = await contentDirectory(item, entry);
     if (index === -1) return readFile(directory, 'rendered.html');
     assert(Number.isInteger(index) && index >= 0 && index < entry.content.pages.length, '页面编号无效。');
     return readFile(await directory.getDirectoryHandle('pages'), `page-${index + 1}.html`);

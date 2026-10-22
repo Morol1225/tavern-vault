@@ -67,7 +67,7 @@ export function captureFloor(host, messageId) {
   return { original, rendered, pages, source, warnings, suggestedTitle: titleFromText(original) };
 }
 
-export function preparePreview(html, origin, document) {
+export function preparePreview(html, origin, document, editBridge = null) {
   const parser = new document.defaultView.DOMParser();
   const page = parser.parseFromString(html, 'text/html');
   page.querySelectorAll('base').forEach(base => base.remove());
@@ -82,5 +82,11 @@ export function preparePreview(html, origin, document) {
   const style = page.createElement('style');
   style.textContent = 'html{color-scheme:light dark}body{margin:20px;font-family:system-ui,"Microsoft YaHei",sans-serif;line-height:1.8;overflow-wrap:anywhere}img,video,canvas,svg{max-width:100%}iframe{max-width:100%;border:0}pre{white-space:pre-wrap;overflow-wrap:anywhere}';
   page.head.prepend(style);
+  if (editBridge && /^https?:\/\//.test(editBridge.targetOrigin)) {
+    const bridge = page.createElement('script');
+    const payload = JSON.stringify({ type: 'tavern-vault:edit-content', token: editBridge.token });
+    bridge.textContent = `window.addEventListener('dblclick',event=>{if(event.isTrusted&&event.target instanceof Element&&!event.target.closest('button,a,input,textarea,select,summary,[role="button"],[contenteditable]'))window.parent.postMessage(${payload},${JSON.stringify(editBridge.targetOrigin)});},true);`;
+    page.head.prepend(bridge);
+  }
   return `<!doctype html>\n${page.documentElement.outerHTML}`;
 }

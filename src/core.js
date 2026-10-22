@@ -1,4 +1,4 @@
-export const VERSION = '0.2.0';
+export const VERSION = '0.3.0';
 export const PRODUCT = 'tavern-vault';
 export const SCHEMA_VERSION = 1;
 export const UNFILED = 'uncategorized';
@@ -45,7 +45,7 @@ export function validateMeta(value) {
 }
 
 export function validateEntry(value, directoryId) {
-  assert(value?.schemaVersion === SCHEMA_VERSION && safeId(value.id) && value.id === directoryId,
+  assert([SCHEMA_VERSION, 2].includes(value?.schemaVersion) && safeId(value.id) && value.id === directoryId,
     '收藏记录的编号或格式无效。');
   assert(typeof value.title === 'string' && value.title.length <= 160 && safeId(value.categoryId),
     '收藏的标题或分类无效。');
@@ -64,10 +64,18 @@ export function validateEntry(value, directoryId) {
   assert(typeof value.updatedAt === 'string' && Number.isFinite(Date.parse(value.updatedAt)), '收藏修改时间无效。');
   assert(value.content?.originalFile === 'original.txt' && value.content?.renderedFile === 'rendered.html' &&
     /^[a-f0-9]{64}$/.test(value.content.originalSha256) && Array.isArray(value.content.pages), '收藏内容索引无效。');
+  assert(value.schemaVersion === 2 ? safeId(value.content.storageId) : value.content.storageId == null,
+    '收藏内容目录无效。');
+  if (value.cleanup != null) assert(value.schemaVersion === 2 && Number.isSafeInteger(value.cleanup.legacyPageCount) &&
+    value.cleanup.legacyPageCount >= -1 && value.cleanup.legacyPageCount <= 100, '收藏清理记录无效。');
   assert(value.content.pages.length <= 100 && value.content.pages.every((p, index) =>
     p && p.file === `pages/page-${index + 1}.html` && typeof p.label === 'string'), '收藏页面路径无效。');
   assert(Array.isArray(value.content.warnings) && value.content.warnings.every(note => typeof note === 'string'), '收藏页面说明记录无效。');
   return value;
+}
+
+export function editToken(entry) {
+  return JSON.stringify([entry.updatedAt, entry.title, entry.categoryId, entry.source, entry.content]);
 }
 
 export function sourceLabel(source) {

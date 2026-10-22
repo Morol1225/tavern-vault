@@ -30,6 +30,14 @@ export class MemoryDirectory {
     this.children.set(name, child);
     return child;
   }
+  async removeEntry(name, { recursive = false } = {}) {
+    this.checkName(name); this.checkWrite();
+    const child = this.children.get(name);
+    if (!child) throw fsError('NotFoundError');
+    if (this.root.state.failRemove && child.path.endsWith(this.root.state.failRemove)) throw fsError('NotAllowedError');
+    if (child.kind === 'directory' && child.children.size && !recursive) throw fsError('InvalidModificationError');
+    this.children.delete(name); this.root.state.writes++;
+  }
   checkName(name) { if (!name || /[\\/]/.test(name) || name === '.' || name === '..') throw new TypeError('Invalid path'); }
   checkWrite() { if (this.root.state.permission !== 'granted') throw fsError('NotAllowedError'); }
   async *values() { for (const value of this.children.values()) yield value; }

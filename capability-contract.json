@@ -8,6 +8,7 @@
     { "id": "event-unsubscribe", "owner": "sillytavern", "symbol": "context.eventSource.removeListener", "required": true, "fallback": null },
     { "id": "chat-change", "owner": "sillytavern", "symbol": "context.eventTypes.CHAT_CHANGED", "required": true, "fallback": null },
     { "id": "folder-picker", "owner": "provider", "symbol": "window.showDirectoryPicker", "required": true, "fallback": null },
+    { "id": "content-cleanup", "owner": "provider", "symbol": "FileSystemDirectoryHandle.prototype.removeEntry", "required": true, "fallback": null },
     { "id": "directory-memory", "owner": "provider", "symbol": "window.indexedDB", "required": false, "fallback": "每次选择同一收藏文件夹；磁盘记录不受影响。" }
   ]
 }

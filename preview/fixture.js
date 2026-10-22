@@ -14,6 +14,7 @@ const chats = [
     { name: '星航员', role: 'assistant', swipes: ['双页便笺\n```html\n<div style="padding:40px;background:#eee9df;color:#46604b"><h1>第一张便笺</h1><button onclick="this.textContent=\'已收好\'">收好这句话</button></div>\n```\n```html\n<div style="padding:40px;background:#e8eddc;color:#46604b"><h1>第二张便笺</h1><details><summary>打开看看</summary><p>旅途总有终点，故事还会继续。</p></details></div>\n```'], swipe_id: 0 },
   ] },
 ];
+chats[0].messages[0].swipes[0] = chats[0].messages[0].swipes[0].replaceAll('\n', '\r\n');
 for (const chat of chats) for (const message of chat.messages) {
   message.mes = message.swipes[message.swipe_id];
   message.is_user = message.role === 'user';
@@ -65,6 +66,7 @@ async function loadScript() {
   extension = await import(`/index.js?preview=${++reloadCount}`);
   extension.onActivate();
 }
+window.previewFsFailure = options => Object.assign(directory.state, options);
 window.previewListenerCount = () => [...eventListeners.values()].reduce((sum, set) => sum + set.size, 0);
 window.previewVaultFiles = () => {
   const result = {};
