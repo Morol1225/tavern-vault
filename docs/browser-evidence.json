@@ -1,0 +1,106 @@
+{
+  "date": "2026-10-22T14:23:37.433Z",
+  "kind": "synthetic-browser",
+  "productVersion": "0.1.0",
+  "browser": "151.0.7922.34",
+  "realSillyTavern": false,
+  "fileSystem": "in-memory FileSystemDirectoryHandle adapter",
+  "build": {
+    "version": "0.1.0",
+    "deliveryMode": "component",
+    "kind": "helper-script",
+    "sources": {
+      "src/core.js": "4c1bde83a749ba340e4ad118702707c0a5e18f911193aad924eb93906d6794ab",
+      "src/storage.js": "4f620cb01416be5b849aeb688b74662c2c8367de713d7db978efe11dfa25edaf",
+      "src/capture.js": "23caacc00be23cbecf592ec68669fe6b6ea20ab6352ed94a95a605b912ab42e1",
+      "src/host.js": "d22989a540c238a2624b4c05031e4506444aac7fd9c8a8e167c20a9ecc0a9fb2",
+      "src/ui.js": "b1e8ff496b2995e62ec0115369cdaae345c8e7abad1b1a9a169ee82769dd6e37",
+      "src/entry.js": "d58ba704242af6da915d13e31c1867cf8de02b07f9b8acf6359e1bab9587d5cd",
+      "src/ui.css": "3039f2fe2c57d0f4e1209dbc16c4c4e25b48cbce4278fe00346ec124186ec50b"
+    },
+    "artifacts": {
+      "tavern-vault.js": "82e651249915af6b9af5268bbbfea7ea1fa55aa8bb0f0f71857a2fafc51c80b5",
+      "tavern-vault.json": "f6d712e65a34d7d34079818376b8b894981c7372bdf5d08c80bb1e1d3575604f"
+    }
+  },
+  "results": [
+    {
+      "name": "未选文件夹时不丢失收藏草稿、不报告保存成功",
+      "result": "passed"
+    },
+    {
+      "name": "每楼收藏、新建分类、来源与原文在实际界面中关联",
+      "result": "passed"
+    },
+    {
+      "name": "保存的 HTML 自身脚本可交互，同时无法直接读取宿主 DOM",
+      "result": "passed"
+    },
+    {
+      "name": "原文视图不执行源码，来源详情保持原聊天与楼层",
+      "result": "passed"
+    },
+    {
+      "name": "标题中的 HTML 作为文字显示，不插入管理界面执行",
+      "result": "passed"
+    },
+    {
+      "name": "跨聊天收藏、复用旧分类、按来源搜索和无结果状态",
+      "result": "passed"
+    },
+    {
+      "name": "脚本重载后恢复同一模拟库，入口和楼层按钮无重复",
+      "result": "passed"
+    },
+    {
+      "name": "按楼层编号收藏和多 HTML 页面切换",
+      "result": "passed"
+    },
+    {
+      "name": "关闭重开后重新装载页面，不停留在空白阅读区",
+      "result": "passed"
+    },
+    {
+      "name": "390px 和 320px 窄窗无管理界面横向溢出，可阅读 HTML、返回列表、按 Escape 关闭弹层",
+      "result": "passed"
+    },
+    {
+      "name": "上述测试无未处理页面脚本异常",
+      "result": "passed"
+    },
+    {
+      "name": "浏览器原生文件系统实际写入、重读与 IndexedDB 目录句柄恢复（不是外部文件夹授权）",
+      "result": "passed"
+    }
+  ],
+  "errors": [],
+  "dimensions": [
+    {
+      "viewport": 390,
+      "width": 390,
+      "scroll": 390,
+      "client": 390
+    },
+    {
+      "viewport": 320,
+      "width": 320,
+      "scroll": 320,
+      "client": 320
+    }
+  ],
+  "nativeFs": {
+    "kind": "origin-private-file-system",
+    "directoryHandleNative": true,
+    "nativePermissionMethods": true,
+    "originalRestored": true,
+    "pagesRestored": true,
+    "nativeIndexedDbHandleRoundTrip": true,
+    "userChosenExternalFolder": false
+  },
+  "screenshots": {
+    "collector-desktop.png": "466c531b7d60ce75aca4d776ad23b6d2f235e853b28231ab9631761f99282619",
+    "library-320.png": "5c33fbab86b17df7ada88752e96d3e0f6a251b8d345f027508a2b835c80d00b3",
+    "library-390.png": "613791eb31ce11bdb32ffa8120d3439da56f10c8b571c221f1b92da1580d7015",
+    "library-desktop.png": "b41a02dbf4a62baadbd64b64e196dbadcef0aa754435f8059a7f8e33f9db5f5e"
+  }
+}

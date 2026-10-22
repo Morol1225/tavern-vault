@@ -1,0 +1,13 @@
+{
+  "name": "tavern-vault",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "依托酒馆助手的电脑文件夹聊天收藏库",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "preview": "node scripts/preview.mjs"
+  },
+  "engines": { "node": ">=22" }
+}

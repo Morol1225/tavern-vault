@@ -1,0 +1,26 @@
+.tools/
+.checks/
+node_modules/
+*.log
+
+# Private collection data. Keep it on this computer.
+/tavern-vault.json
+**/items/
+**/original.txt
+**/rendered.html
+**/entry.json
+/local-data/
+/backups/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Local handoff/history and legacy helper-script artifacts.
+/.tavernweave/
+/NEXT.md
+/总设计案.md
+/项目实现步骤蓝图.md
+/docs/接口核验.md
+/dist/
