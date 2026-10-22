@@ -1,27 +1,27 @@
 {
-  "date": "2026-10-22T20:21:18.886Z",
+  "date": "2026-10-22T20:36:27.158Z",
   "kind": "synthetic-browser",
-  "productVersion": "0.3.1",
+  "productVersion": "0.3.2",
   "browser": "151.0.7922.34",
   "realSillyTavern": false,
   "fileSystem": "in-memory FileSystemDirectoryHandle adapter",
   "build": {
-    "version": "0.3.1",
+    "version": "0.3.2",
     "deliveryMode": "extension",
     "kind": "sillytavern-ui-extension",
     "sources": {
-      "src/core.js": "6bf0837670358ce9dbcc64abf77f0a090b82f48527de8e488bb05d21906b9dc6",
+      "src/core.js": "5ca721d97eb2cfb876c9bb141335971eb5fb4dfcc63713d1f4ab4124d54f53e4",
       "src/storage.js": "99709e97e049b445c1458d4f76561a41e837fb608a21c8d55a317903447fa581",
-      "src/capture.js": "5300921d8496572a24606dd3e1671b43ea7cf8b53e329dd373203ecd0d59f2f0",
+      "src/capture.js": "97287c03e57d29f76e4e2a4c2b007b6e0ff5411678339617b5e3cbbf9167aebc",
       "src/selection.js": "e088b909b5c6a91f66969cbc972ab1ac6599ffef352f1dec68129d13951a1299",
       "src/host.js": "f2d74dc1752968210fd83a548f1d0b2950621412757a30465271e9172db29e71",
-      "src/ui.js": "3c0f95b7225a5a0d8026aa44be8997230736490940547eaff2e86189e92f3651",
+      "src/ui.js": "dfccd6b1c56bed45f10896a184c8dbd50a7cba7e5d3aba74d96e7e68ef8a77c1",
       "src/entry.js": "14699ec46e49cd2bd34c7660156da1890226edab5c0b9d386127ed3395186801",
-      "src/ui.css": "0d49896bcf323280c685f163000993baff48dfbd4ec476e34af85dda29b5eacf"
+      "src/ui.css": "fbb4c8f6c27e0bed64b7faeb8423e7f83fd38083df51664efd4dff7863dc42d9"
     },
     "artifacts": {
-      "index.js": "8be994e45b76bdc400fe6a2771d45353a9baecd001e7cd4b06190342d161ddfe",
-      "manifest.json": "7b881f56146fd29781c6ca79dd4232fe82e4f19725c9d18cb15583cf8648a23d"
+      "index.js": "074b5bfea214bc4db41af9b972b111f776f0a49fb029a48d7a6fccb10ddbbee5",
+      "manifest.json": "4c1e8ac5c565d2707521bb0bbd88304f2ee123be318682ab808835a5066f8f36"
     }
   },
   "results": [
@@ -43,6 +43,10 @@
     },
     {
       "name": "保存的 HTML 自身脚本可交互，同时无法直接读取宿主 DOM",
+      "result": "passed"
+    },
+    {
+      "name": "展开正文占满右侧区域，分类列表保留；还原和 iframe 内 Escape 不重载页面或改动文件",
       "result": "passed"
     },
     {
@@ -123,6 +127,66 @@
     "textLines": 1,
     "whiteSpace": "nowrap"
   },
+  "expandedReading": {
+    "normal": {
+      "reader": {
+        "x": 536.796875,
+        "y": 153.84375,
+        "width": 873.390625,
+        "height": 755.15625
+      },
+      "content": {
+        "x": 536.796875,
+        "y": 426.46875,
+        "width": 873.390625,
+        "height": 482.53125
+      },
+      "iframe": {
+        "x": 536.796875,
+        "y": 426.46875,
+        "width": 873.390625,
+        "height": 482.53125
+      }
+    },
+    "narrow": [
+      {
+        "width": 390,
+        "readerHeight": 747,
+        "frameHeight": 747,
+        "readerWidth": 390,
+        "frameWidth": 390,
+        "topGap": 0
+      },
+      {
+        "width": 320,
+        "readerHeight": 747,
+        "frameHeight": 747,
+        "readerWidth": 320,
+        "frameWidth": 320,
+        "topGap": 0
+      }
+    ],
+    "expanded": {
+      "reader": {
+        "x": 536.796875,
+        "y": 153.84375,
+        "width": 873.390625,
+        "height": 755.15625
+      },
+      "content": {
+        "x": 536.796875,
+        "y": 153.84375,
+        "width": 873.390625,
+        "height": 755.15625
+      },
+      "iframe": {
+        "x": 536.796875,
+        "y": 153.84375,
+        "width": 873.390625,
+        "height": 755.15625
+      }
+    }
+  },
   "nativeFs": {
     "confirmedEditRoundTrip": true,
     "oldContentRemoved": true,
@@ -135,12 +199,14 @@
     "userChosenExternalFolder": false
   },
   "screenshots": {
-    "collector-desktop.png": "7d8666211a3e3ee3127103a5c6746623a061855ff55a758738dd9e5ff45ace78",
+    "collector-desktop.png": "40023dbda81584ccf4cdb0f27069ae65928312e618400f168c07fc1c48653f11",
     "editor-320.png": "7122a99bf2ba9e0d24e4389fd2a476e8de3e0512499d22b45662d272dbcc955d",
     "editor-desktop.png": "760507f6410e3a95c3102531f6fffb57532f3a4a105ca992b40252481269c164",
-    "library-320.png": "77e6edf418669dae031b5a6911c1be2cf0fb0e1cd40f8fff990c54a99b859e40",
-    "library-390.png": "923462118b4bdba4ea38a0f7ed694100d51052f1c93a34a05d56bed435eba418",
-    "library-desktop.png": "0fbe4ac3ab92b6e0fcb6156325702a0808223c87f3a67293bcfa0c25d57ee399",
+    "library-320.png": "838f14969ed79c89d7e12dbf8340fe0cc2fe3afe89a4af9402129f7f2cf4c26e",
+    "library-390.png": "9a30953d0961008727a6ed1d472afb0fe02301fa0300b4b3007148d279759429",
+    "library-desktop.png": "f895db72c7a6828c6f9024dddf1adb5a38536ab7c5a0874cd656f14be806c0cd",
+    "library-expanded-320.png": "7bcef608b9eeda03eef770e088b5502c98c24b12d9c87d2cc66d22bcd7750790",
+    "library-expanded.png": "fac5d538d4feb9de1ca0a2ce8fb93bb159aae1812e87f63fbbc067c132306ab9",
     "settings-entry.png": "05963566b596069225a0feb541472f2c1663c07cdfce48cd71787c78586e491a"
   }
 }

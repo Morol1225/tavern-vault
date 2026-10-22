@@ -10,7 +10,8 @@ const allowed = new Set([
   'docs/screenshots/library-desktop.png', 'docs/screenshots/collector-desktop.png',
   'docs/screenshots/library-390.png', 'docs/screenshots/library-320.png',
   'docs/screenshots/editor-desktop.png', 'docs/screenshots/editor-320.png',
-  'docs/screenshots/settings-entry.png',
+  'docs/screenshots/settings-entry.png', 'docs/screenshots/library-expanded.png',
+  'docs/screenshots/library-expanded-320.png',
 ]);
 const git = (...args) => execFileSync('git', ['-c', `safe.directory=${process.cwd().replaceAll('\\', '/')}`, ...args], { encoding: 'utf8', maxBuffer: 4_000_000 });
 const staged = git('diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z').split('\0').filter(Boolean);

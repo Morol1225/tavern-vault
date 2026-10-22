@@ -94,6 +94,32 @@ try {
   assert.equal(await htmlFrame.locator('body').evaluate(() => { try { return Boolean(window.parent.document.body); } catch { return false; } }), false);
   passed('保存的 HTML 自身脚本可交互，同时无法直接读取宿主 DOM');
   await page.screenshot({ path: path.join(evidenceRoot, 'library-desktop.png') });
+  const readingLayout = () => page.locator('#tavern-vault-root .reader').evaluate(element => {
+    const box = node => { const r = node.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
+    return { reader: box(element), content: box(element.querySelector('.content')), iframe: box(element.querySelector('iframe')) };
+  });
+  const expandedReading = { normal: await readingLayout(), narrow: [] };
+  const filesBeforeExpand = await page.evaluate(() => window.previewVaultFiles());
+  await page.getByRole('button', { name: /展开.*阅读区|展开正文/ }).click();
+  expandedReading.expanded = await readingLayout();
+  const expanded = expandedReading.expanded;
+  assert(Math.abs(expanded.content.y - expanded.reader.y) <= 1 && Math.abs(expanded.content.height - expanded.reader.height) <= 1,
+    `展开后正文应占满右侧阅读区：${JSON.stringify(expandedReading)}`);
+  assert(Math.abs(expanded.iframe.width - expanded.reader.width) <= 1 && Math.abs(expanded.iframe.height - expanded.reader.height) <= 1);
+  assert(Math.abs(expanded.reader.x - expandedReading.normal.reader.x) <= 1);
+  assert.equal(await page.locator('#tavern-vault-root .sidebar').isVisible(), true);
+  assert.equal(await page.locator('#tavern-vault-root .list-pane').isVisible(), true);
+  await page.screenshot({ path: path.join(evidenceRoot, 'library-expanded.png'), animations: 'disabled' });
+  assert.equal(await htmlFrame.locator('#status').textContent(), '灯已点亮，欢迎回家。');
+  await htmlFrame.getByRole('button', { name: '让灯歇一会儿', exact: true }).click();
+  await page.keyboard.press('Escape');
+  await page.locator('#tavern-vault-root .surface:not(.expanded)').waitFor();
+  assert.equal(await htmlFrame.locator('#status').textContent(), '窗边还暗着。');
+  await page.getByRole('button', { name: /展开.*阅读区|展开正文/ }).click();
+  await page.getByRole('button', { name: '还原阅读区', exact: true }).click();
+  assert.equal(await page.locator('#tavern-vault-root .reader-heading').isVisible(), true);
+  assert.deepEqual(await page.evaluate(() => window.previewVaultFiles()), filesBeforeExpand);
+  passed('展开正文占满右侧区域，分类列表保留；还原和 iframe 内 Escape 不重载页面或改动文件');
   await page.getByRole('tab', { name: '原文', exact: true }).click();
   assert.match(await page.locator('#tavern-vault-root .content pre').textContent(), /addEventListener\('click'/);
   assert.match(await page.locator('#tavern-vault-root .content pre').textContent(), /```html/);
@@ -306,6 +332,17 @@ try {
       viewport: window.innerWidth, width: element.getBoundingClientRect().width, scroll: element.scrollWidth, client: element.clientWidth,
     })));
     await narrow.screenshot({ path: path.join(evidenceRoot, `library-${width}.png`) });
+    await narrow.getByRole('button', { name: '展开正文', exact: true }).click();
+    const narrowExpanded = await narrow.locator('#tavern-vault-root .reader').evaluate(element => {
+      const reader = element.getBoundingClientRect();
+      const frame = element.querySelector('iframe').getBoundingClientRect();
+      return { width: innerWidth, readerHeight: reader.height, frameHeight: frame.height, readerWidth: reader.width, frameWidth: frame.width, topGap: frame.y - reader.y };
+    });
+    assert(Math.abs(narrowExpanded.readerHeight - narrowExpanded.frameHeight) <= 1 && Math.abs(narrowExpanded.readerWidth - narrowExpanded.frameWidth) <= 1 && Math.abs(narrowExpanded.topGap) <= 1);
+    expandedReading.narrow.push(narrowExpanded);
+    if (width === 320) await narrow.screenshot({ path: path.join(evidenceRoot, 'library-expanded-320.png'), animations: 'disabled' });
+    await narrow.getByRole('button', { name: '还原阅读区', exact: true }).click();
+    assert.equal(await frame.locator('#status').textContent(), '灯已点亮，欢迎回家。');
     const narrowFiles = await narrow.evaluate(() => window.previewVaultFiles());
     await narrow.getByRole('button', { name: '编辑内容', exact: true }).click();
     await narrow.locator('#tavern-vault-root .body-input').fill('窄窗取消的编辑草稿');
@@ -372,9 +409,9 @@ try {
   await nativePage.close();
   passed('浏览器原生文件系统实际写入、重读与 IndexedDB 目录句柄恢复（不是外部文件夹授权）');
   const build = JSON.parse(await fs.readFile(path.join(root, 'dist/build-manifest.json'), 'utf8'));
-  const evidence = { date: new Date().toISOString(), kind: 'synthetic-browser', productVersion: '0.3.1', browser: browser.version(),
+  const evidence = { date: new Date().toISOString(), kind: 'synthetic-browser', productVersion: '0.3.2', browser: browser.version(),
     realSillyTavern: false, fileSystem: 'in-memory FileSystemDirectoryHandle adapter', build,
-    results, errors, dimensions, settingsLayout, nativeFs, screenshots: {} };
+    results, errors, dimensions, settingsLayout, expandedReading, nativeFs, screenshots: {} };
   for (const name of await fs.readdir(evidenceRoot)) if (name.endsWith('.png')) {
     evidence.screenshots[name] = crypto.createHash('sha256').update(await fs.readFile(path.join(evidenceRoot, name))).digest('hex');
   }

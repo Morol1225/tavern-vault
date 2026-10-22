@@ -48,6 +48,7 @@ const SHELL = `
         <div class="items" role="list"></div>
       </section>
       <section class="reader" aria-label="收藏阅读区">
+        <button class="restore-reader" data-action="restore-reader" type="button" aria-label="还原阅读区" title="还原阅读区" hidden>${icon('expand')}<span>还原</span></button>
         <div class="reader-empty">
           <div class="empty-illustration">${icon('bookmark')}<i></i><i></i><i></i></div>
           <h2>留住一段喜欢的对话</h2><p>连接收藏文件夹后，点击聊天楼层旁的“收藏”。<br>留下的文字和页面，都可以在这里慢慢读。</p>
@@ -55,7 +56,7 @@ const SHELL = `
         </div>
         <div class="reader-filled" hidden>
           <header class="reader-heading">
-            <div class="reader-tools"><button data-action="back-list" type="button" class="text-button back-list">${icon('arrow')}返回列表</button><span class="reader-category"></span><div class="reader-secondary"><button data-action="edit-content" type="button" class="text-button">编辑内容</button><button data-action="edit" type="button" class="text-button">整理</button><button data-action="expand" type="button" class="icon-button" aria-label="展开或还原阅读区" title="展开或还原阅读区">${icon('expand')}</button></div></div>
+            <div class="reader-tools"><button data-action="back-list" type="button" class="text-button back-list">${icon('arrow')}返回列表</button><span class="reader-category"></span><div class="reader-secondary"><button data-action="edit-content" type="button" class="text-button">编辑内容</button><button data-action="edit" type="button" class="text-button">整理</button><button data-action="expand" type="button" class="icon-button" aria-label="展开正文" title="展开正文" aria-expanded="false" aria-controls="tv-content">${icon('expand')}</button></div></div>
             <h2 class="reader-title"></h2><p class="reader-origin"></p><p class="reader-date"></p><div class="cleanup-note" hidden><span>新内容已保存，旧文件清理尚未完成。</span><button type="button" data-action="cleanup-content" class="text-button">重试清理</button></div>
           </header>
           <div class="viewbar"><div role="tablist" aria-label="收藏查看方式"><button type="button" role="tab" data-view="page" aria-selected="true">页面</button><button type="button" role="tab" data-view="original" aria-selected="false">原文</button><button type="button" role="tab" data-view="source" aria-selected="false">来源详情</button></div><button type="button" data-action="reload-page" class="text-button" title="重新运行当前页面" aria-label="重新运行当前页面">${icon('refresh')}</button></div>
@@ -127,8 +128,10 @@ export class VaultUI {
     this.previewMessage = event => {
       const frame = this.$('.content iframe');
       if (this.alive && this.visible && !this.busy && this.$('.sheet-veil').hidden && event.origin === 'null' &&
-        event.source === frame?.contentWindow && event.data?.type === 'tavern-vault:edit-content' &&
-        this.previewEditToken && event.data.token === this.previewEditToken) this.openContentEditor();
+        event.source === frame?.contentWindow && this.previewEditToken && event.data?.token === this.previewEditToken) {
+        if (event.data.type === 'tavern-vault:edit-content') this.openContentEditor();
+        if (event.data.type === 'tavern-vault:restore-reader' && this.$('.surface').classList.contains('expanded')) this.setExpanded(false);
+      }
     };
     host.window.addEventListener('message', this.previewMessage);
     this.focusGuard = event => {
@@ -209,6 +212,7 @@ export class VaultUI {
 
   close() {
     if (this.busy) return;
+    this.setExpanded(false, false);
     this.$('.veil').hidden = true;
     this.$('.sheet-veil').hidden = true;
     this.clearContentEditor();
@@ -341,11 +345,21 @@ export class VaultUI {
     });
     if (action === 'edit' && this.selected) this.showForm('edit', this.selected);
     if (action === 'reload-page') { this.readerKey = ''; this.renderReader(); }
-    if (action === 'expand') this.$('.surface').classList.toggle('expanded');
+    if (action === 'expand') this.setExpanded(true);
+    if (action === 'restore-reader') this.setExpanded(false);
     if (action === 'back-list') {
-      this.$('.surface').classList.remove('has-selection', 'expanded');
+      this.setExpanded(false, false);
+      this.$('.surface').classList.remove('has-selection');
       this.$('.search input').focus();
     }
+  }
+
+  setExpanded(expanded, restoreFocus = true) {
+    const active = Boolean(expanded && this.selected);
+    this.$('.surface').classList.toggle('expanded', active);
+    this.$('.restore-reader').hidden = !active;
+    this.$('[data-action="expand"]').setAttribute('aria-expanded', String(active));
+    if (restoreFocus && this.visible && this.selected) this.$(active ? '.restore-reader' : '[data-action="expand"]').focus();
   }
 
   onKey(event) {
@@ -366,7 +380,7 @@ export class VaultUI {
       if (this.busy) return;
       if (!this.$('.sheet-veil').hidden) this.hideForm();
       else if (!this.$('.number-veil').hidden) this.$('.number-veil').hidden = true;
-      else if (this.$('.surface').classList.contains('expanded')) this.$('.surface').classList.remove('expanded');
+      else if (this.$('.surface').classList.contains('expanded')) this.setExpanded(false);
       else this.close();
     }
     if (event.key === 'Tab') {
@@ -639,7 +653,7 @@ export class VaultUI {
     const entry = this.selected;
     this.$('.reader-empty').hidden = Boolean(entry);
     this.$('.reader-filled').hidden = !entry;
-    if (!entry) { this.readerToken++; this.$('.content').replaceChildren(); this.readerKey = ''; return; }
+    if (!entry) { this.setExpanded(false, false); this.readerToken++; this.$('.content').replaceChildren(); this.readerKey = ''; return; }
     this.$('.cleanup-note').hidden = !entry.cleanup;
     const key = `${entry.id}:${entry.updatedAt}:${entry.content.storageId || ''}:${this.view}:${this.pageIndex}`;
     if (key === this.readerKey) return;

@@ -85,7 +85,8 @@ export function preparePreview(html, origin, document, editBridge = null) {
   if (editBridge && /^https?:\/\//.test(editBridge.targetOrigin)) {
     const bridge = page.createElement('script');
     const payload = JSON.stringify({ type: 'tavern-vault:edit-content', token: editBridge.token });
-    bridge.textContent = `window.addEventListener('dblclick',event=>{if(event.isTrusted&&event.target instanceof Element&&!event.target.closest('button,a,input,textarea,select,summary,[role="button"],[contenteditable]'))window.parent.postMessage(${payload},${JSON.stringify(editBridge.targetOrigin)});},true);`;
+    const restorePayload = JSON.stringify({ type: 'tavern-vault:restore-reader', token: editBridge.token });
+    bridge.textContent = `window.addEventListener('dblclick',event=>{if(event.isTrusted&&event.target instanceof Element&&!event.target.closest('button,a,input,textarea,select,summary,[role="button"],[contenteditable]'))window.parent.postMessage(${payload},${JSON.stringify(editBridge.targetOrigin)});},true);window.addEventListener('keydown',event=>{if(event.isTrusted&&event.key==='Escape'&&!event.defaultPrevented)window.parent.postMessage(${restorePayload},${JSON.stringify(editBridge.targetOrigin)});});`;
     page.head.prepend(bridge);
   }
   return `<!doctype html>\n${page.documentElement.outerHTML}`;
