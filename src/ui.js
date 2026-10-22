@@ -1,5 +1,6 @@
 import { VERSION, UNFILED, sourceLabel, normalized, friendlyError, assert } from './core.js';
 import { captureFloor, preparePreview } from './capture.js';
+import { selectDraft } from './selection.js';
 
 const ICON_PATHS = {
   shelf: '<path d="M4 4h16v16H4zM4 12h16M8 4v8m5-8v8m4 2v6M8 14v6"/>',
@@ -70,6 +71,12 @@ const SHELL = `
         <p class="draft-source"></p><p class="draft-summary"></p>
         <label class="field"><span class="title-label">收藏标题</span><input class="title-input" required maxlength="160" autocomplete="off"></label>
         <div class="category-fields"><label class="field">归入分类<select class="category-select"></select></label><button type="button" class="new-category-toggle text-button" data-action="toggle-category">${icon('plus')}新建分类</button><label class="field new-category-field" hidden>新分类名称<input class="new-category-input" maxlength="80" autocomplete="off" placeholder="例如：喜欢的剧情"></label></div>
+        <section class="selection-fields" aria-label="收藏内容筛选">
+          <div class="selection-heading"><h3>只留下想收藏的部分</h3><span>可选 · 留空保存整楼</span></div>
+          <div class="selection-inputs"><label class="field">只提取这个标签内的内容<input class="include-tag-input" autocomplete="off" placeholder="例如：<content>" aria-describedby="tv-selection-help"></label><label class="field">再排除这些标签及其内容<input class="exclude-tags-input" autocomplete="off" placeholder="例如：<image>，thinking" aria-describedby="tv-selection-help"></label></div>
+          <p id="tv-selection-help" class="selection-help">先提取，再排除。提取标签本身不保存；多个同名片段一起保留。排除多个标签时，用逗号分隔。</p>
+          <p class="selection-status" role="status" aria-live="polite"></p><pre class="selection-preview" tabindex="0" aria-label="待保存原文预览"></pre>
+        </section>
         <div class="sheet-folder"><span class="sheet-folder-name">保存前，请先选择收藏文件夹。</span><button type="button" data-action="connect" class="text-button">选择 / 授权文件夹</button></div>
         <p class="form-error" role="alert" hidden></p>
         <footer><button type="button" data-action="cancel-form" class="secondary">取消</button><button type="submit" class="primary submit-button">保存到文件夹</button></footer>
@@ -127,6 +134,8 @@ export class VaultUI {
       this.readerKey = '';
       this.renderReader();
     });
+    this.$('.title-input').addEventListener('input', () => { this.titleEdited = true; });
+    for (const selector of ['.include-tag-input', '.exclude-tags-input']) this.$(selector).addEventListener('input', () => this.updateSelection());
     this.$('.sheet').addEventListener('submit', event => { event.preventDefault(); this.submitForm(); });
     this.$('.number-sheet').addEventListener('submit', event => {
       event.preventDefault();
@@ -351,6 +360,12 @@ export class VaultUI {
     this.formOpener = this.root.activeElement;
     this.mode = mode;
     this.draft = draft;
+    this.titleEdited = false;
+    this.filteredDraft = null;
+    this.selectionError = null;
+    this.$('.include-tag-input').value = '';
+    this.$('.exclude-tags-input').value = '';
+    this.$('.selection-fields').hidden = mode !== 'new';
     this.$('.sheet-veil').hidden = false;
     this.$('.form-error').hidden = true;
     this.$('.new-category-field').hidden = true;
@@ -369,6 +384,7 @@ export class VaultUI {
       this.text('.draft-source', sourceLabel(draft.source));
       this.text('.draft-summary', `${draft.source.speakerName || '未取得发言者'} · 消息版本 ${draft.source.swipeId + 1} · ${(draft.original || '').length.toLocaleString()} 字符`);
     }
+    if (mode === 'new') this.updateSelection();
     this.populateCategorySelect(mode === 'edit' ? draft.categoryId : this.category);
     this.renderConnection();
     this.updateDisabled();
@@ -395,7 +411,34 @@ export class VaultUI {
     this.formOpener?.focus?.();
   }
 
+  updateSelection() {
+    if (this.mode !== 'new') return;
+    try {
+      this.filteredDraft = selectDraft(this.draft, { includeTag: this.$('.include-tag-input').value, excludeTags: this.$('.exclude-tags-input').value });
+      this.selectionError = null;
+      const draft = this.filteredDraft;
+      const rules = draft.source.selection;
+      this.$('.selection-status').classList.remove('invalid');
+      this.text('.selection-status', rules ? `将保存 ${draft.original.length.toLocaleString()} 字符 · 提取 ${rules.includedCount} 段 · 排除 ${rules.excludedCount} 段` : `未设置筛选，将保存整楼 ${draft.original.length.toLocaleString()} 字符。`);
+      this.text('.selection-preview', draft.original);
+      if (!this.titleEdited) this.$('.title-input').value = draft.suggestedTitle;
+      this.$('.form-error').hidden = true;
+    } catch (error) {
+      this.filteredDraft = null;
+      this.selectionError = error;
+      this.$('.selection-status').classList.add('invalid');
+      this.text('.selection-status', friendlyError(error));
+      this.text('.selection-preview', '规则尚未匹配有效内容，当前不能保存。');
+      if (!this.titleEdited) this.$('.title-input').value = '未命名收藏';
+    }
+  }
+
   async submitForm() {
+    if (this.busy) return;
+    if (this.mode === 'new') {
+      this.updateSelection();
+      if (this.selectionError) { this.showError(this.selectionError); return; }
+    }
     const title = this.$('.title-input').value.trim();
     const options = { title, categoryId: this.$('.category-select').value,
       newCategory: this.$('.new-category-field').hidden ? '' : this.$('.new-category-input').value };
@@ -413,7 +456,7 @@ export class VaultUI {
         this.category = '*';
         this.notice('标题与分类已更新，原文和来源保持不变。');
       } else {
-        const result = await this.storage.save(this.draft, options);
+        const result = await this.storage.save(this.filteredDraft, options);
         this.selectedId = result.entry.id;
         this.category = '*';
         this.view = 'page';
@@ -555,7 +598,12 @@ export class VaultUI {
         ['发言者', entry.source.speakerName || '未取得'], ['消息版本', `${entry.source.swipeId + 1}（内部编号 ${entry.source.swipeId}）`],
         ['收藏时间', new Date(entry.savedAt).toLocaleString('zh-CN', { hour12: false })],
         ['捕获时间', entry.source.capturedAt ? new Date(entry.source.capturedAt).toLocaleString('zh-CN', { hour12: false }) : '未取得'],
-        ['酒馆版本', entry.source.tavernVersion || '未取得'], ['酒馆助手版本', entry.source.helperVersion || '未取得']];
+        ['酒馆版本', entry.source.tavernVersion || '未取得'], ['储藏库版本', entry.source.vaultVersion || '未取得']];
+      if (entry.source.helperVersion) fields.push(['原收藏的酒馆助手版本', entry.source.helperVersion]);
+      if (entry.source.selection) {
+        const rules = entry.source.selection;
+        fields.push(['提取标签', rules.includeTag ? `<${rules.includeTag}>` : '整楼'], ['排除标签', rules.excludeTags?.map(tag => `<${tag}>`).join('、') || '无']);
+      }
       for (const [label, value] of fields) {
         const dt = this.host.document.createElement('dt'); dt.textContent = label;
         const dd = this.host.document.createElement('dd'); dd.textContent = value;

@@ -1,29 +1,34 @@
 {
-  "date": "2026-10-22T14:23:37.433Z",
+  "date": "2026-10-22T16:44:49.496Z",
   "kind": "synthetic-browser",
-  "productVersion": "0.1.0",
+  "productVersion": "0.2.0",
   "browser": "151.0.7922.34",
   "realSillyTavern": false,
   "fileSystem": "in-memory FileSystemDirectoryHandle adapter",
   "build": {
-    "version": "0.1.0",
-    "deliveryMode": "component",
-    "kind": "helper-script",
+    "version": "0.2.0",
+    "deliveryMode": "extension",
+    "kind": "sillytavern-ui-extension",
     "sources": {
-      "src/core.js": "4c1bde83a749ba340e4ad118702707c0a5e18f911193aad924eb93906d6794ab",
+      "src/core.js": "5325f5cbb276250c812403b113dfdd4c9d9866a490bfa9d64e21ae0589239440",
       "src/storage.js": "4f620cb01416be5b849aeb688b74662c2c8367de713d7db978efe11dfa25edaf",
-      "src/capture.js": "23caacc00be23cbecf592ec68669fe6b6ea20ab6352ed94a95a605b912ab42e1",
-      "src/host.js": "d22989a540c238a2624b4c05031e4506444aac7fd9c8a8e167c20a9ecc0a9fb2",
-      "src/ui.js": "b1e8ff496b2995e62ec0115369cdaae345c8e7abad1b1a9a169ee82769dd6e37",
-      "src/entry.js": "d58ba704242af6da915d13e31c1867cf8de02b07f9b8acf6359e1bab9587d5cd",
-      "src/ui.css": "3039f2fe2c57d0f4e1209dbc16c4c4e25b48cbce4278fe00346ec124186ec50b"
+      "src/capture.js": "4c53f2fcad809aa509e25aca393be8c00cee131355ad6dc6ddefa9520a783d56",
+      "src/selection.js": "e088b909b5c6a91f66969cbc972ab1ac6599ffef352f1dec68129d13951a1299",
+      "src/host.js": "ee6b1ccf95d6685a7f022bcbc9a608b02aa536b7ec51549292e7582eb4c8bbd7",
+      "src/ui.js": "8bdea60f9e1b0342ffeee1d82f7b66858b9db8f03cdfd50759b7a864d501df58",
+      "src/entry.js": "14699ec46e49cd2bd34c7660156da1890226edab5c0b9d386127ed3395186801",
+      "src/ui.css": "30bac673a2799ef4c9a1e44d5ac6546ad3c15e41b2c4f2872e4b3131ae177856"
     },
     "artifacts": {
-      "tavern-vault.js": "82e651249915af6b9af5268bbbfea7ea1fa55aa8bb0f0f71857a2fafc51c80b5",
-      "tavern-vault.json": "f6d712e65a34d7d34079818376b8b894981c7372bdf5d08c80bb1e1d3575604f"
+      "index.js": "6c638771ad101b75ae89c97512926071bede95d8692e4b9b2e9bc4d09c18c21e",
+      "manifest.json": "95b810eb1207d55895fa7eb7198fd689bb2b8ff6f4402311e47c094629a569c3"
     }
   },
   "results": [
+    {
+      "name": "不安装酒馆助手也能启动；禁用清理全部入口与事件，再启用不重复",
+      "result": "passed"
+    },
     {
       "name": "未选文件夹时不丢失收藏草稿、不报告保存成功",
       "result": "passed"
@@ -49,7 +54,7 @@
       "result": "passed"
     },
     {
-      "name": "脚本重载后恢复同一模拟库，入口和楼层按钮无重复",
+      "name": "扩展重载后恢复同一模拟库，入口和楼层按钮无重复",
       "result": "passed"
     },
     {
@@ -58,6 +63,10 @@
     },
     {
       "name": "关闭重开后重新装载页面，不停留在空白阅读区",
+      "result": "passed"
+    },
+    {
+      "name": "先提取再排除：实时预览、缺失标签阻止写入、HTML 交互及所有保存文件无排除内容残留",
       "result": "passed"
     },
     {
@@ -98,9 +107,9 @@
     "userChosenExternalFolder": false
   },
   "screenshots": {
-    "collector-desktop.png": "466c531b7d60ce75aca4d776ad23b6d2f235e853b28231ab9631761f99282619",
-    "library-320.png": "5c33fbab86b17df7ada88752e96d3e0f6a251b8d345f027508a2b835c80d00b3",
-    "library-390.png": "613791eb31ce11bdb32ffa8120d3439da56f10c8b571c221f1b92da1580d7015",
-    "library-desktop.png": "b41a02dbf4a62baadbd64b64e196dbadcef0aa754435f8059a7f8e33f9db5f5e"
+    "collector-desktop.png": "c2636e3694c7a40808783219e061be7ddf56786da921dda8e4fc6804dd293077",
+    "library-320.png": "8314e4e18e68cca7c5da1322ad0392bac17d52d2a05a4717c8e8e513adf14800",
+    "library-390.png": "d0c502f923f353174aa015624686df0aa94078db08b0b51a9ea21bed34f7243e",
+    "library-desktop.png": "14560c4d8e514b801797cb460b3a9fbd300104d266006f3fc554364771a7f488"
   }
 }

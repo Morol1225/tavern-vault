@@ -14,22 +14,22 @@ const chats = [
     { name: '星航员', role: 'assistant', swipes: ['双页便笺\n```html\n<div style="padding:40px;background:#eee9df;color:#46604b"><h1>第一张便笺</h1><button onclick="this.textContent=\'已收好\'">收好这句话</button></div>\n```\n```html\n<div style="padding:40px;background:#e8eddc;color:#46604b"><h1>第二张便笺</h1><details><summary>打开看看</summary><p>旅途总有终点，故事还会继续。</p></details></div>\n```'], swipe_id: 0 },
   ] },
 ];
+for (const chat of chats) for (const message of chat.messages) {
+  message.mes = message.swipes[message.swipe_id];
+  message.is_user = message.role === 'user';
+}
 let active = 0;
 const directory = new MemoryDirectory();
 const eventListeners = new Map();
-const context = () => ({ chatId: chats[active].name, characterId: 0, groupId: '', name2: chats[active].character,
-  characters: [{ name: chats[active].character, avatar: `synthetic-character-${active}.png` }], groups: [], chat: chats[active].messages });
-window.SillyTavern = { getContext: context };
-window.TavernHelper = {
-  getChatMessages(id, options) {
-    const msg = chats[active].messages[id];
-    if (!msg) return [];
-    return [{ message_id: id, name: msg.name, role: msg.role, is_hidden: false,
-      ...(options?.include_swipes ? { swipe_id: msg.swipe_id, swipes: [...msg.swipes] } : { message: msg.swipes[msg.swipe_id] }) }];
-  },
-  retrieveDisplayedMessage(id) { return [document.querySelector(`.mes[mesid="${id}"] .mes_text`)]; },
-  formatAsDisplayedMessage(text) { return `<pre style="white-space:pre-wrap">${text.replaceAll('&', '&amp;').replaceAll('<', '&lt;')}</pre>`; },
+const eventTypes = { APP_READY: 'app_ready', CHAT_CHANGED: 'chat_id_changed', USER_MESSAGE_RENDERED: 'user_message_rendered',
+  CHARACTER_MESSAGE_RENDERED: 'character_message_rendered', MESSAGE_UPDATED: 'message_updated', MESSAGE_SWIPED: 'message_swiped', MORE_MESSAGES_LOADED: 'more_messages_loaded' };
+const eventSource = {
+  on(name, listener) { if (!eventListeners.has(name)) eventListeners.set(name, new Set()); eventListeners.get(name).add(listener); },
+  removeListener(name, listener) { eventListeners.get(name)?.delete(listener); },
 };
+const context = () => ({ chatId: chats[active].name, characterId: 0, groupId: '', name2: chats[active].character,
+  characters: [{ name: chats[active].character, avatar: `synthetic-character-${active}.png` }], groups: [], chat: chats[active].messages, eventTypes, eventSource });
+window.SillyTavern = { getContext: context };
 window.showDirectoryPicker = async () => directory;
 const preferences = new Map();
 Object.defineProperty(window, 'indexedDB', { value: {
@@ -54,31 +54,33 @@ function renderChat() {
   chats[active].messages.forEach((message, index) => {
     const row = document.createElement('article'); row.className = 'mes'; row.setAttribute('mesid', index);
     const title = document.createElement('h2'); title.textContent = `${message.name} · 楼层 #${index}`;
-    const body = document.createElement('div'); body.className = 'mes_text'; body.textContent = message.swipes[message.swipe_id];
+    const body = document.createElement('div'); body.className = 'mes_text'; body.textContent = message.mes;
     const controls = document.createElement('div'); controls.className = 'mes_buttons'; row.append(title, body, controls); chat.append(row);
   });
 }
-function loadScript() {
-  document.querySelector('.script-frame')?.remove();
-  const frame = document.createElement('iframe'); frame.className = 'script-frame'; frame.name = 'TH-script--储藏库--synthetic-preview';
-  frame.srcdoc = `<!doctype html><html><body><script>
-window.getChatMessages=parent.TavernHelper.getChatMessages;
-window.retrieveDisplayedMessage=parent.TavernHelper.retrieveDisplayedMessage;
-window.formatAsDisplayedMessage=parent.TavernHelper.formatAsDisplayedMessage;
-window.getTavernVersion=()=> '合成宿主';window.getTavernHelperVersion=()=> '附件接口模拟';
-window.tavern_events={CHAT_CHANGED:'chat_id_changed',USER_MESSAGE_RENDERED:'user_message_rendered',CHARACTER_MESSAGE_RENDERED:'character_message_rendered',MESSAGE_UPDATED:'message_updated',MESSAGE_SWIPED:'message_swiped'};
-window.eventOn=(name,listener)=>parent.previewSubscribe(name,listener);
-window.getButtonEvent=name=>'synthetic-button:'+name;window.appendInexistentScriptButtons=()=>{};
-<\/script><script src="/dist/tavern-vault.js"><\/script></body></html>`;
-  document.body.append(frame);
+let extension;
+let reloadCount = 0;
+async function loadScript() {
+  extension?.onDisable();
+  extension = await import(`/index.js?preview=${++reloadCount}`);
+  extension.onActivate();
 }
-window.previewSubscribe = (name, listener) => {
-  if (!eventListeners.has(name)) eventListeners.set(name, new Set());
-  eventListeners.get(name).add(listener);
-  return { stop: () => eventListeners.get(name)?.delete(listener) };
+window.previewListenerCount = () => [...eventListeners.values()].reduce((sum, set) => sum + set.size, 0);
+window.previewVaultFiles = () => {
+  const result = {};
+  function visit(dir) { for (const handle of dir.children.values()) { if (handle.kind === 'file') result[handle.path] = handle.value; else visit(handle); } }
+  visit(directory);
+  return result;
 };
+window.previewTaggedFloor = () => {
+  const message = chats[active].messages[1];
+  message.mes = '<thinking>OUTSIDE_FILTER_MARKER</thinking>\n<content><image>EXCLUDED_IMAGE_MARKER</image>\n<div><button id="kept-button" onclick="this.textContent=\'已保留交互\'">保留按钮</button><p>保留的故事</p></div>\n<image><div>EXCLUDED_SECOND_MARKER</div></image></content>尾部不收藏';
+  renderChat();
+};
+document.getElementById('disable-extension').onclick = () => extension?.onDisable();
+document.getElementById('enable-extension').onclick = () => extension?.onEnable();
 document.getElementById('switch-chat').onclick = () => {
   active = (active + 1) % chats.length; renderChat(); eventListeners.get('chat_id_changed')?.forEach(listener => listener());
 };
 document.getElementById('reload-script').onclick = loadScript;
-renderChat(); loadScript();
+renderChat(); await loadScript();

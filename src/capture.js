@@ -5,10 +5,10 @@ export function captureFloor(host, messageId) {
   const context = host.context();
   const chatId = String(context.getCurrentChatId?.() || context.chatId || '');
   assert(chatId, '请先打开一段聊天，再收藏楼层。');
-  const message = host.api.getChatMessages(messageId, { include_swipes: true })[0];
+  const message = host.readMessage(messageId);
   assert(message && message.message_id === messageId, '没有找到这个楼层，请检查编号。');
   const swipeId = Number.isSafeInteger(message.swipe_id) ? message.swipe_id : 0;
-  const original = Array.isArray(message.swipes) ? message.swipes[swipeId] : message.message;
+  const original = message.message;
   assert(typeof original === 'string', '没有取得当前消息版本的原文。');
   const isGroup = Boolean(context.groupId);
   const character = context.characters?.[context.characterId];
@@ -29,7 +29,7 @@ export function captureFloor(host, messageId) {
   let pages = extractHtmlPages(original);
   let rendered = '';
   try {
-    const displayed = host.api.retrieveDisplayedMessage?.(messageId)?.[0];
+    const displayed = host.displayedMessage?.(messageId);
     if (displayed) {
       const clone = displayed.cloneNode(true);
       clone.querySelectorAll('[data-tv-owned]').forEach(node => node.remove());

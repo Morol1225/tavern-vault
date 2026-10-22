@@ -2,15 +2,15 @@ import { execFileSync } from 'node:child_process';
 
 const allowed = new Set([
   '.gitignore', '.gitattributes', 'README.md', 'package.json', 'manifest.json', 'index.js', 'capability-contract.json',
-  'src/core.js', 'src/storage.js', 'src/capture.js', 'src/host.js', 'src/ui.js', 'src/ui.css', 'src/entry.js',
+  'src/core.js', 'src/storage.js', 'src/capture.js', 'src/host.js', 'src/ui.js', 'src/ui.css', 'src/entry.js', 'src/selection.js',
   'scripts/build.mjs', 'scripts/preview.mjs', 'scripts/check-publish.mjs',
-  'tests/vault.test.mjs', 'tests/native-host.test.mjs', 'tests/memory-fs.mjs', 'tests/browser-check.mjs',
+  'tests/vault.test.mjs', 'tests/native-host.test.mjs', 'tests/selection.test.mjs', 'tests/memory-fs.mjs', 'tests/browser-check.mjs',
   'preview/index.html', 'preview/fixture.js', 'preview/native-fs.html',
   'docs/验证报告.md', 'docs/native-extension.md', 'docs/browser-evidence.json',
   'docs/screenshots/library-desktop.png', 'docs/screenshots/collector-desktop.png',
   'docs/screenshots/library-390.png', 'docs/screenshots/library-320.png',
 ]);
-const git = (...args) => execFileSync('git', ['-c', 'safe.directory=D:/chucangku', ...args], { encoding: 'utf8', maxBuffer: 4_000_000 });
+const git = (...args) => execFileSync('git', ['-c', `safe.directory=${process.cwd().replaceAll('\\', '/')}`, ...args], { encoding: 'utf8', maxBuffer: 4_000_000 });
 const staged = git('diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z').split('\0').filter(Boolean);
 const tracked = git('ls-files', '-z').split('\0').filter(Boolean);
 const errors = [];

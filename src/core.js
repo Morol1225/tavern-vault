@@ -1,4 +1,4 @@
-export const VERSION = '0.1.0';
+export const VERSION = '0.2.0';
 export const PRODUCT = 'tavern-vault';
 export const SCHEMA_VERSION = 1;
 export const UNFILED = 'uncategorized';
@@ -53,6 +53,13 @@ export function validateEntry(value, directoryId) {
     Number.isSafeInteger(value.source.messageId) && value.source.messageId >= 0 &&
     Number.isSafeInteger(value.source.swipeId) && value.source.swipeId >= 0 &&
     typeof value.source.speakerName === 'string', '收藏来源记录不完整。');
+  if (value.source.selection != null) {
+    const selection = value.source.selection;
+    assert(typeof selection.includeTag === 'string' && Array.isArray(selection.excludeTags) &&
+      selection.excludeTags.every(tag => typeof tag === 'string') &&
+      Number.isSafeInteger(selection.includedCount) && selection.includedCount >= 0 &&
+      Number.isSafeInteger(selection.excludedCount) && selection.excludedCount >= 0, '收藏的标签筛选记录损坏。');
+  }
   assert(typeof value.savedAt === 'string' && Number.isFinite(Date.parse(value.savedAt)), '收藏时间无效。');
   assert(typeof value.updatedAt === 'string' && Number.isFinite(Date.parse(value.updatedAt)), '收藏修改时间无效。');
   assert(value.content?.originalFile === 'original.txt' && value.content?.renderedFile === 'rendered.html' &&

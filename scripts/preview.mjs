@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const allow = new Set(['/preview/index.html', '/preview/fixture.js', '/preview/native-fs.html', '/tests/memory-fs.mjs', '/dist/tavern-vault.js', '/src/core.js', '/src/storage.js']);
+const allow = new Set(['/preview/index.html', '/preview/fixture.js', '/preview/native-fs.html', '/tests/memory-fs.mjs', '/index.js', '/manifest.json', '/src/core.js', '/src/storage.js']);
 const server = http.createServer(async (request, response) => {
   const url = new URL(request.url, 'http://localhost');
   const target = url.pathname === '/' ? '/preview/index.html' : url.pathname;

@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-import vm from 'node:vm';
 import { VaultStorage } from '../src/storage.js';
 import { captureFloor } from '../src/capture.js';
 import { extractHtmlPages, digest, META_FILE, UNFILED } from '../src/core.js';
@@ -177,7 +176,7 @@ test('收藏草稿读取当前消息版本，并在切换聊天后保留原来�
   const context = { chatId: '原聊天.jsonl', characterId: 0, characters: [{ avatar: 'old.png', name: '原角色' }], chat: [{}, {}] };
   const host = { window: { location: { origin: 'http://localhost:8000' } }, context: () => context,
     lastMessageId: () => 1, versions: { tavern: 'snapshot', helper: 'snapshot' },
-    api: { getChatMessages: () => [{ message_id: 1, swipe_id: 1, swipes: ['旧页', '当前页'], name: '原角色', role: 'assistant' }] } };
+    readMessage: () => ({ message_id: 1, swipe_id: 1, message: '当前页', name: '原角色', role: 'assistant' }) };
   const frozen = captureFloor(host, 1);
   context.chatId = '新聊天'; context.characters[0].name = '新角色';
   assert.equal(frozen.original, '当前页');
@@ -192,20 +191,23 @@ test('收藏不会重新运行可能修改变量的宏和显示格式化接口',
   const raw = '{{setvar::test::changed}}\n```html\n<div>{{char}}</div>\n```';
   const fail = () => { throw new Error('收藏不应调用变换接口'); };
   const host = { window: { location: { origin: 'http://localhost:8000' } }, context: () => ({ chatId: '原聊天', chat: [{}] }),
-    versions: {}, lastMessageId: () => 0, api: { getChatMessages: () => [{ message_id: 0, swipe_id: 0, swipes: [raw], name: '测试', role: 'assistant' }],
+    versions: {}, lastMessageId: () => 0, readMessage: () => ({ message_id: 0, swipe_id: 0, message: raw, name: '测试', role: 'assistant' }), api: {
       substitudeMacros: fail, formatAsDisplayedMessage: fail, formatAsTavernRegexedString: fail } };
   const result = captureFloor(host, 0);
   assert.equal(result.original, raw);
   assert.equal(result.pages[0].html, '<div>{{char}}</div>');
 });
 
-test('构建导出 JSON 与脚本逐字符一致，且无远程代码加载器', async () => {
-  const json = JSON.parse(await fs.readFile(new URL('../dist/tavern-vault.json', import.meta.url), 'utf8'));
-  const js = await fs.readFile(new URL('../dist/tavern-vault.js', import.meta.url), 'utf8');
-  assert.equal(json.content, js);
-  assert.equal(json.type, 'script'); assert.equal(json.enabled, true);
-  assert.equal(json.button.buttons[0].name, '储藏库');
-  assert.equal(json.export_with.data, false);
-  new vm.Script(js);
+test('原生扩展入口与构建摘要一致，无助手启动依赖或远程代码加载器', async () => {
+  const manifest = JSON.parse(await fs.readFile(new URL('../manifest.json', import.meta.url), 'utf8'));
+  const js = await fs.readFile(new URL('../index.js', import.meta.url), 'utf8');
+  const build = JSON.parse(await fs.readFile(new URL('../dist/build-manifest.json', import.meta.url), 'utf8'));
+  assert.equal(manifest.js, 'index.js');
+  assert.equal(manifest.version, build.version);
+  assert.equal(await digest(js), build.artifacts['index.js']);
+  for (const [name, hash] of Object.entries(build.sources)) assert.equal(await digest(await fs.readFile(new URL(`../${name}`, import.meta.url), 'utf8')), hash);
+  const entry = await import('../index.js');
+  for (const name of Object.values(manifest.hooks)) assert.equal(typeof entry[name], 'function');
   assert.doesNotMatch(js, /import\s*\(\s*['"]https?:|import\s+.*?from\s*['"]https?:|fetch\s*\(/);
+  assert.doesNotMatch(js, /getChatMessages|retrieveDisplayedMessage|appendInexistentScriptButtons|scriptWindow\.parent/);
 });

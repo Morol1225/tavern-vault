@@ -32,6 +32,18 @@ try {
   await page.goto(url);
   await page.getByRole('button', { name: '打开储藏库', exact: true }).waitFor();
   assert.equal(await page.locator('#chat [data-tv-owned="floor"]').count(), 3);
+  assert.equal(await page.evaluate(() => typeof window.TavernHelper), 'undefined');
+  assert.equal(await page.locator('#tavern-vault-settings').count(), 1);
+  const listenerCount = await page.evaluate(() => window.previewListenerCount());
+  await page.getByRole('button', { name: '禁用扩展', exact: true }).click();
+  assert.equal(await page.locator('#tavern-vault-root').count(), 0);
+  assert.equal(await page.locator('#chat [data-tv-owned="floor"]').count(), 0);
+  assert.equal(await page.locator('#tavern-vault-settings').count(), 0);
+  assert.equal(await page.evaluate(() => window.previewListenerCount()), 0);
+  await page.getByRole('button', { name: '启用扩展', exact: true }).click();
+  await page.getByRole('button', { name: '打开储藏库', exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => window.previewListenerCount()), listenerCount);
+  passed('不安装酒馆助手也能启动；禁用清理全部入口与事件，再启用不重复');
   await page.getByRole('button', { name: '收藏楼层 #0', exact: true }).click();
   const form = page.locator('#tavern-vault-root .sheet');
   const draftedTitle = await form.locator('.title-input').inputValue();
@@ -103,14 +115,14 @@ try {
   passed('跨聊天收藏、复用旧分类、按来源搜索和无结果状态');
 
   await page.getByRole('button', { name: '关闭储藏库', exact: true }).click();
-  await page.getByRole('button', { name: '重载脚本', exact: true }).click();
+  await page.getByRole('button', { name: '重载扩展', exact: true }).click();
   await page.getByRole('button', { name: '打开储藏库', exact: true }).waitFor();
   await page.getByRole('button', { name: '打开储藏库', exact: true }).click();
   await page.locator('#tavern-vault-root .item').first().waitFor();
   assert.equal(await page.locator('#tavern-vault-root').count(), 1);
   assert.equal(await page.locator('#chat [data-tv-owned="floor"]').count(), 2);
   assert.equal(await page.locator('#tavern-vault-root .item').count(), 3);
-  passed('脚本重载后恢复同一模拟库，入口和楼层按钮无重复');
+  passed('扩展重载后恢复同一模拟库，入口和楼层按钮无重复');
 
   await page.getByRole('button', { name: '收藏楼层', exact: true }).click();
   const floorForm = page.locator('#tavern-vault-root .number-sheet');
@@ -128,6 +140,39 @@ try {
   await page.frameLocator('#tavern-vault-root .content iframe').getByText('第二张便笺', { exact: true }).waitFor();
   passed('关闭重开后重新装载页面，不停留在空白阅读区');
 
+  await page.getByRole('button', { name: '关闭储藏库', exact: true }).click();
+  await page.evaluate(() => window.previewTaggedFloor());
+  await page.getByRole('button', { name: '收藏楼层 #1', exact: true }).click();
+  const beforeFiltering = await page.evaluate(() => Object.keys(window.previewVaultFiles()).length);
+  await form.locator('.include-tag-input').fill('<absent>');
+  await form.getByRole('button', { name: '保存到文件夹', exact: true }).click();
+  assert.match(await form.locator('.form-error').textContent(), /没有找到 <absent>/);
+  assert.equal(await page.evaluate(() => Object.keys(window.previewVaultFiles()).length), beforeFiltering);
+  await form.locator('.include-tag-input').fill('<content>');
+  await form.locator('.exclude-tags-input').fill('<image>');
+  const filteredPreview = await form.locator('.selection-preview').textContent();
+  assert.match(filteredPreview, /保留的故事/);
+  assert.doesNotMatch(filteredPreview, /EXCLUDED_|OUTSIDE_FILTER_MARKER|尾部不收藏/);
+  assert.doesNotMatch(await form.locator('.title-input').inputValue(), /EXCLUDED_|OUTSIDE_FILTER_MARKER/);
+  await form.locator('.title-input').fill('按标签留下的故事');
+  await page.screenshot({ path: path.join(evidenceRoot, 'collector-desktop.png') });
+  await form.getByRole('button', { name: '保存到文件夹', exact: true }).click();
+  await page.locator('#tavern-vault-root .sheet-veil').waitFor({ state: 'hidden' });
+  await page.frameLocator('#tavern-vault-root .content iframe').getByRole('button', { name: '保留按钮', exact: true }).click();
+  await page.frameLocator('#tavern-vault-root .content iframe').getByRole('button', { name: '已保留交互', exact: true }).waitFor();
+  const savedFiltered = await page.evaluate(() => {
+    const files = window.previewVaultFiles();
+    const marker = Object.entries(files).find(([name, body]) => name.endsWith('/entry.json') && JSON.parse(body).title === '按标签留下的故事');
+    const prefix = marker[0].slice(0, -'entry.json'.length);
+    return { record: JSON.parse(marker[1]), files: Object.entries(files).filter(([name]) => name.startsWith(prefix)) };
+  });
+  assert.equal(savedFiltered.record.source.selection.includeTag, 'content');
+  assert.deepEqual(savedFiltered.record.source.selection.excludeTags, ['image']);
+  for (const [, text] of savedFiltered.files) assert.doesNotMatch(text, /EXCLUDED_|OUTSIDE_FILTER_MARKER|尾部不收藏/);
+  await page.getByRole('tab', { name: '来源详情', exact: true }).click();
+  assert.match(await page.locator('#tavern-vault-root .content').textContent(), /<content>[\s\S]*<image>/);
+  passed('先提取再排除：实时预览、缺失标签阻止写入、HTML 交互及所有保存文件无排除内容残留');
+
   const dimensions = [];
   for (const width of [390, 320]) {
     const narrow = await context.newPage();
@@ -139,6 +184,13 @@ try {
     await narrowForm.getByRole('button', { name: '选择文件夹', exact: true }).click();
     await narrow.locator('#tavern-vault-root .connection-dot.connected').waitFor();
     await narrowForm.locator('.title-input').fill('给晚归的旅人');
+    await narrowForm.locator('.include-tag-input').fill('<missing>');
+    assert.match(await narrowForm.locator('.selection-status').textContent(), /没有找到/);
+    assert(await narrowForm.evaluate(element => element.scrollWidth <= element.clientWidth + 1));
+    await narrowForm.locator('.include-tag-input').fill('');
+    await narrowForm.locator('.title-input').focus();
+    const saveBounds = await narrowForm.locator('.submit-button').boundingBox();
+    assert(saveBounds.y >= 0 && saveBounds.y + saveBounds.height <= 844, '窄窗中保存按钮应留在可见范围');
     await narrowForm.getByRole('button', { name: '保存到文件夹', exact: true }).click();
     await narrow.locator('#tavern-vault-root .sheet-veil').waitFor({ state: 'hidden' });
     const frame = narrow.frameLocator('#tavern-vault-root .content iframe');
@@ -196,7 +248,7 @@ try {
   await nativePage.close();
   passed('浏览器原生文件系统实际写入、重读与 IndexedDB 目录句柄恢复（不是外部文件夹授权）');
   const build = JSON.parse(await fs.readFile(path.join(root, 'dist/build-manifest.json'), 'utf8'));
-  const evidence = { date: new Date().toISOString(), kind: 'synthetic-browser', productVersion: '0.1.0', browser: browser.version(),
+  const evidence = { date: new Date().toISOString(), kind: 'synthetic-browser', productVersion: '0.2.0', browser: browser.version(),
     realSillyTavern: false, fileSystem: 'in-memory FileSystemDirectoryHandle adapter', build,
     results, errors, dimensions, nativeFs, screenshots: {} };
   for (const name of await fs.readdir(evidenceRoot)) if (name.endsWith('.png')) {
