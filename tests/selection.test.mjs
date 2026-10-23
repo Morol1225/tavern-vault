@@ -80,12 +80,10 @@ test('文件夹中的原文、页面、快照和记录均只写入筛选结果�
   await reopened.attach(directory, false);
   assert.equal(reopened.entries[0].id, saved.entry.id);
   assert.equal(reopened.entries[0].original, '<div>保留</div>');
-  assert.deepEqual(reopened.entries[0].source.selection.excludeTags, ['image']);
-  const marker = await (await (await directory.getDirectoryHandle('items')).getDirectoryHandle(saved.entry.id)).getFileHandle('entry.json');
+  assert.deepEqual(Object.keys(reopened.entries[0].source).sort(), ['characterName', 'chatId', 'messageId']);
+  const marker = await directory.getFileHandle('tavern-vault.json');
   const invalid = JSON.parse(marker.value);
-  invalid.source.selection.excludeTags = '不是数组';
+  invalid.entries[0].source.messageId = -1;
   marker.value = JSON.stringify(invalid);
-  await reopened.load();
-  assert.equal(reopened.entries.length, 0);
-  assert.match(reopened.issues[0].message, /筛选记录损坏/);
+  await assert.rejects(reopened.load(), /来源记录不完整/);
 });

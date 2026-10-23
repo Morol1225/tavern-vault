@@ -1,27 +1,27 @@
 {
-  "date": "2026-10-23T10:20:05.416Z",
+  "date": "2026-10-23T10:54:37.269Z",
   "kind": "synthetic-browser",
-  "productVersion": "0.4.0",
+  "productVersion": "0.5.0",
   "browser": "151.0.7922.34",
   "realSillyTavern": false,
   "fileSystem": "in-memory FileSystemDirectoryHandle adapter",
   "build": {
-    "version": "0.4.0",
+    "version": "0.5.0",
     "deliveryMode": "extension",
     "kind": "sillytavern-ui-extension",
     "sources": {
-      "src/core.js": "5e3b9cb2614d91689c9e2ab06077ef01eee8662fc293315893de43beb5587317",
-      "src/storage.js": "5a9cc3d158684e57614d94900fe55444ac9b68ba19d67488fc363309c2f4942f",
+      "src/core.js": "b3f7c4028030345d20ba069d52351626b52926fdf34b0ac71066bf53feacff6b",
+      "src/storage.js": "41853bcbc8b324fc1fac2ac47ad49181c354cfedc381b4005d355482184d0f18",
       "src/capture.js": "97287c03e57d29f76e4e2a4c2b007b6e0ff5411678339617b5e3cbbf9167aebc",
       "src/selection.js": "e088b909b5c6a91f66969cbc972ab1ac6599ffef352f1dec68129d13951a1299",
       "src/host.js": "f2d74dc1752968210fd83a548f1d0b2950621412757a30465271e9172db29e71",
-      "src/ui.js": "786055dc119424094b82d2276e193784c2ced8bad76435986d21dafad8caf8d8",
+      "src/ui.js": "7267d22dddb65904750a5b7c73fb95d9f9cd1ae1754cf19d594a5cf9d917ae93",
       "src/entry.js": "14699ec46e49cd2bd34c7660156da1890226edab5c0b9d386127ed3395186801",
-      "src/ui.css": "5cf199a08d72561651597b91d60b30fc715fade859f8fdc0473961c5a02601e0"
+      "src/ui.css": "37c907f7a93c84c2baac3b42075aabc0745bd072a50410416828966113eccfd7"
     },
     "artifacts": {
-      "index.js": "81edb7d835454c2cf5c7deb147018da65ee7ce9bf0b504f9c50b15d5adaaff28",
-      "manifest.json": "75f34fe3d3cf76b3ea2ebf2b647a6abc35c4bce6ba27c7bad4bb139495f032aa"
+      "index.js": "3c68f1b9dc6c7eb8469a1bbf54d55174715c74a065b44ae6c3d4ee242cdf22ba",
+      "manifest.json": "dac92f3a3c0beaa7c97a96d2d2a7f264affe66be36af4b494cf2f35826c886cd"
     }
   },
   "results": [
@@ -42,7 +42,7 @@
       "result": "passed"
     },
     {
-      "name": "本地原文和 HTML 显示副本以收藏时的标题命名，原文换行保持不变",
+      "name": "每条收藏只生成 items/标题.txt，不生成 HTML、JSON 或编号子目录",
       "result": "passed"
     },
     {
@@ -54,7 +54,7 @@
       "result": "passed"
     },
     {
-      "name": "原文视图不执行源码，来源详情保持原聊天与楼层",
+      "name": "来源只在标题旁显示聊天、角色、楼层与收藏时间，没有单独来源页；原文视图不执行源码",
       "result": "passed"
     },
     {
@@ -94,11 +94,19 @@
       "result": "passed"
     },
     {
-      "name": "写入失败保留编辑草稿和原记录，清理失败单独提示且能重试完成",
+      "name": "写入失败保留编辑草稿与原 TXT，重试确认后直接替换同一个 TXT",
       "result": "passed"
     },
     {
       "name": "整理时预览安全文件名，取消不写盘，确认后同步改名、清理旧名称并可重载恢复",
+      "result": "passed"
+    },
+    {
+      "name": "删除按钮可见，取消保留文件；确认删除移除收藏，文件清理失败可明确重试",
+      "result": "passed"
+    },
+    {
+      "name": "旧库整理取消不改文件，确认后变为 items/标题.txt，清理旧目录并保留源码页面交互",
       "result": "passed"
     },
     {
@@ -145,15 +153,15 @@
       },
       "content": {
         "x": 536.796875,
-        "y": 426.46875,
+        "y": 374.828125,
         "width": 873.390625,
-        "height": 482.53125
+        "height": 534.171875
       },
       "iframe": {
         "x": 536.796875,
-        "y": 426.46875,
+        "y": 374.828125,
         "width": 873.390625,
-        "height": 482.53125
+        "height": 534.171875
       }
     },
     "narrow": [
@@ -196,6 +204,8 @@
     }
   },
   "nativeFs": {
+    "deleteRoundTrip": true,
+    "flatTextOnly": true,
     "namedFilesRoundTrip": true,
     "titleRenameRoundTrip": true,
     "confirmedEditRoundTrip": true,
@@ -209,13 +219,13 @@
     "userChosenExternalFolder": false
   },
   "screenshots": {
-    "collector-desktop.png": "1ddc3052f535e624348e13efe073d3008134b8fe70c596e9866f0039f8e21df6",
-    "editor-320.png": "7122a99bf2ba9e0d24e4389fd2a476e8de3e0512499d22b45662d272dbcc955d",
-    "editor-desktop.png": "e93094f786d1d263b59190658618578951f5720b5a50c12a5b4f584605013c63",
-    "library-320.png": "0cf743eba2593b8dea4297433135077b870b7fc8c887d9cee93337819210b2ca",
-    "library-390.png": "5b87c63ebba8e20b1f2573b43bfcbd72a65548f1be0b45e16cedf5cd00a7bdb8",
-    "library-desktop.png": "fc742ad31615d99c13de2fc0e0d6246d5e6aa37834b478fb21c10bdfafdd07f5",
-    "library-expanded-320.png": "a24975e15bce3af2b84f37e20ae0538b734ebd91c781eb757f629f52947ea692",
+    "collector-desktop.png": "98090d5de04c2a06bc070f726f0f41dd0348a687cd55607934ae62c3305d0112",
+    "editor-320.png": "bbfa7dee15d5c45df9dd046e3f715ba4b88cfe93020b07ba685bd7db52451aae",
+    "editor-desktop.png": "54abfae0ff37370258893a4d73cc575b3aa1b5b1d4632a65bf1eec18d2617a7b",
+    "library-320.png": "0dfa69bf50d6c3c87d53444042748b8a8fc83c011904459728bc98cd26eda708",
+    "library-390.png": "6cff7e7a88a6283e5cd7a69d657823910ba89db58a24ff328132387d02f835d4",
+    "library-desktop.png": "b3f40fb1af96c07d92813fcf4d0563ef8003b526fa96a1bb626292636afe84bf",
+    "library-expanded-320.png": "d7ef70e0bc9a99a8c30a5b981ba4c07cf0d56aceebabe9ab81b8376b148dc993",
     "library-expanded.png": "fac5d538d4feb9de1ca0a2ce8fb93bb159aae1812e87f63fbbc067c132306ab9",
     "settings-entry.png": "05963566b596069225a0feb541472f2c1663c07cdfce48cd71787c78586e491a"
   }

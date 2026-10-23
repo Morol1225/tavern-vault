@@ -1,4 +1,4 @@
-import { VERSION, UNFILED, sourceLabel, normalized, friendlyError, assert, editToken, titleFileBase } from './core.js';
+import { VERSION, UNFILED, sourceLabel, normalized, friendlyError, assert, editToken, compactSource } from './core.js';
 import { captureFloor, preparePreview } from './capture.js';
 import { selectDraft } from './selection.js';
 
@@ -40,6 +40,8 @@ const SHELL = `
           <p class="folder-status">收藏会保存在你选择的电脑文件夹里。</p>
           <button data-action="connect" type="button" class="connect">选择收藏文件夹</button>
           <button data-action="choose" type="button" class="change-folder" hidden>换个文件夹</button>
+          <button data-action="migrate" type="button" class="connect" hidden>旧收藏整理为 TXT</button>
+          <button data-action="retry-deletions" type="button" class="connect" hidden>重试清理已删除文件</button>
         </div>
       </aside>
       <section class="list-pane" aria-label="收藏列表">
@@ -56,10 +58,10 @@ const SHELL = `
         </div>
         <div class="reader-filled" hidden>
           <header class="reader-heading">
-            <div class="reader-tools"><button data-action="back-list" type="button" class="text-button back-list">${icon('arrow')}返回列表</button><span class="reader-category"></span><div class="reader-secondary"><button data-action="edit-content" type="button" class="text-button">编辑内容</button><button data-action="edit" type="button" class="text-button">整理</button><button data-action="expand" type="button" class="icon-button" aria-label="展开正文" title="展开正文" aria-expanded="false" aria-controls="tv-content">${icon('expand')}</button></div></div>
-            <h2 class="reader-title"></h2><p class="reader-origin"></p><p class="reader-date"></p><div class="cleanup-note" hidden><span>新内容已保存，旧文件清理尚未完成。</span><button type="button" data-action="cleanup-content" class="text-button">重试清理</button></div>
+            <div class="reader-tools"><button data-action="back-list" type="button" class="text-button back-list">${icon('arrow')}返回列表</button><span class="reader-category"></span><div class="reader-secondary"><button data-action="edit-content" type="button" class="text-button">编辑内容</button><button data-action="edit" type="button" class="text-button">整理</button><button data-action="delete" type="button" class="text-button danger-button">删除收藏</button><button data-action="expand" type="button" class="icon-button" aria-label="展开正文" title="展开正文" aria-expanded="false" aria-controls="tv-content">${icon('expand')}</button></div></div>
+            <div class="reader-title-row"><h2 class="reader-title"></h2><p class="reader-origin"></p></div><div class="cleanup-note" hidden><span>新内容已保存，旧文件清理尚未完成。</span><button type="button" data-action="cleanup-content" class="text-button">重试清理</button></div>
           </header>
-          <div class="viewbar"><div role="tablist" aria-label="收藏查看方式"><button type="button" role="tab" data-view="page" aria-selected="true">页面</button><button type="button" role="tab" data-view="original" aria-selected="false">原文</button><button type="button" role="tab" data-view="source" aria-selected="false">来源详情</button></div><button type="button" data-action="reload-page" class="text-button" title="重新运行当前页面" aria-label="重新运行当前页面">${icon('refresh')}</button></div>
+          <div class="viewbar"><div role="tablist" aria-label="收藏查看方式"><button type="button" role="tab" data-view="page" aria-selected="true">页面</button><button type="button" role="tab" data-view="original" aria-selected="false">原文</button></div><button type="button" data-action="reload-page" class="text-button" title="重新运行当前页面" aria-label="重新运行当前页面">${icon('refresh')}</button></div>
           <div class="page-tools"><label>查看<select class="page-select" aria-label="选择 HTML 页面"></select></label><span>独立预览</span></div>
           <div class="content" role="tabpanel" tabindex="0"></div><div class="page-notes" hidden></div>
         </div>
@@ -337,6 +339,28 @@ export class VaultUI {
       this.$('.category-select').disabled = !area.hidden;
       if (!area.hidden) this.$('.new-category-input').focus();
     }
+    if (action === 'delete' && this.selected) {
+      const entry = this.selected;
+      const options = { confirmed: true, expectedToken: editToken(entry), expectedLibraryId: this.storage.meta.libraryId };
+      if (!this.host.window.confirm(`删除“${entry.title}”？\n确认后将删除这条收藏及对应本地文件，不保留旧版本。`)) return;
+      this.withBusy(async () => {
+        const result = await this.storage.delete(entry.id, options);
+        this.selectedId = null; this.readerKey = ''; this.setExpanded(false, false);
+        this.notice(result.cleanupPending ? '已移除收藏，本地文件尚未清理完；请点击“重试清理已删除文件”。' : '收藏及对应本地文件已删除。', result.cleanupPending);
+      });
+    }
+    if (action === 'migrate') {
+      const expectedLibraryId = this.storage.meta.libraryId;
+      if (!this.host.window.confirm(`将 ${this.storage.legacyCount} 条旧收藏整理为 items/标题.txt？\n会保留原文、分类和简要来源，确认后清理旧目录及 HTML 副本。页面改由 TXT 中的代码生成，单独显示副本不再保留。`)) return;
+      this.withBusy(async () => {
+        const result = await this.storage.migrate({ confirmed: true, expectedLibraryId }); this.readerKey = '';
+        this.notice(`已整理 ${result.converted} 条收藏为 TXT。${result.cleanupPending ? '部分旧文件尚未清理，请打开对应记录重试清理。' : '旧目录已清理。'}`, Boolean(result.cleanupPending));
+      });
+    }
+    if (action === 'retry-deletions') this.withBusy(async () => {
+      const remaining = await this.storage.retryDeletions();
+      this.notice(remaining ? '仍有文件无法清理，请检查文件夹权限或文件是否被外部修改后重试。' : '已删除收藏的本地文件已清理。', Boolean(remaining));
+    });
     if (action === 'edit-content') this.openContentEditor();
     if (action === 'cleanup-content' && this.selected) this.withBusy(async () => {
       await this.storage.cleanupContent(this.selected.id);
@@ -453,7 +477,7 @@ export class VaultUI {
     this.updateFilenamePreview();
     if (draft) {
       this.text('.draft-source', sourceLabel(draft.source));
-      this.text('.draft-summary', `${draft.source.speakerName || '未取得发言者'} · 消息版本 ${draft.source.swipeId + 1} · ${(draft.original || '').length.toLocaleString()} 字符`);
+      this.text('.draft-summary', `${compactSource(draft.source).characterName} · ${(draft.original || '').length.toLocaleString()} 字符`);
     }
     if (mode === 'new') this.updateSelection();
     this.populateCategorySelect(['edit', 'content'].includes(mode) ? draft.categoryId : this.category);
@@ -509,9 +533,9 @@ export class VaultUI {
   updateFilenamePreview() {
     this.$('.file-hint').hidden = !['new', 'edit'].includes(this.mode);
     const title = this.$('.title-input').value.trim();
-    const file = this.mode === 'edit' && title === this.draft.title
-      ? this.draft.content.originalFile : `${titleFileBase(title)}.txt`;
-    this.text('.file-hint', `本地原文：${file}`);
+    const file = this.mode === 'edit' && title === this.draft.title && this.draft.schemaVersion !== 4
+      ? this.draft.content.originalFile : this.storage.previewFileName(title, this.mode === 'edit' ? this.draft.id : null);
+    this.text('.file-hint', `本地原文：${this.mode === 'edit' && title === this.draft.title && this.draft.schemaVersion !== 4 ? '' : 'items/'}${file}`);
   }
 
   async submitForm() {
@@ -548,7 +572,7 @@ export class VaultUI {
           expectedToken: this.expectedEditToken, expectedLibraryId: this.editLibraryId });
         this.category = '*';
         this.notice(result.cleanup ? '整理已保存，但旧文件尚未清理完；请在阅读区重试清理。'
-          : result.schemaVersion === 3 ? '整理已保存，文件名与标题同步。' : '整理已保存。', Boolean(result.cleanup));
+          : result.schemaVersion === 4 ? '整理已保存，文件名与标题同步。' : '整理已保存。', Boolean(result.cleanup));
       } else {
         const result = await this.storage.save(this.filteredDraft, options);
         this.selectedId = result.entry.id;
@@ -573,6 +597,8 @@ export class VaultUI {
     this.text('.folder-status', connected ? '直接保存到此电脑文件夹。' : directory ? '重新授权后继续读取原有收藏。' : '收藏会保存在你选择的电脑文件夹里。');
     this.text('.connect', directory ? '重新授权' : '选择收藏文件夹');
     this.$('.change-folder').hidden = !directory;
+    this.$('[data-action="migrate"]').hidden = !connected || !this.storage.legacyCount;
+    this.$('[data-action="retry-deletions"]').hidden = !connected || !this.storage.pendingDeleteCount;
     this.$('.connection-dot').classList.toggle('connected', connected);
     this.text('.sheet-folder-name', connected ? `保存位置：${directory.name}` : '保存前，请先选择收藏文件夹。');
     this.$('.sheet-folder button').textContent = directory ? '重新授权' : '选择文件夹';
@@ -614,7 +640,7 @@ export class VaultUI {
   renderList() {
     const query = normalized(this.query);
     const entries = this.storage.entries.filter(entry => (this.category === '*' || entry.categoryId === this.category) &&
-      (!query || normalized([entry.title, entry.original, sourceLabel(entry.source), entry.source.speakerName, entry.source.characterOrGroupName].join('\n')).includes(query)));
+      (!query || normalized([entry.title, entry.original, sourceLabel(entry.source), compactSource(entry.source).characterName].join('\n')).includes(query)));
     this.text('.result-count', `${entries.length} 条`);
     if (!entries.some(entry => entry.id === this.selectedId)) {
       this.selectedId = entries[0]?.id || null;
@@ -674,8 +700,8 @@ export class VaultUI {
     this.previewEditToken = null;
     this.text('.reader-title', entry.title);
     this.text('.reader-category', this.storage.meta?.categories.find(category => category.id === entry.categoryId)?.name || '分类已缺失');
-    this.text('.reader-origin', sourceLabel(entry.source));
-    this.text('.reader-date', `${entry.source.speakerName || '未取得发言者'} · 收藏于 ${new Date(entry.savedAt).toLocaleString('zh-CN', { hour12: false })}${entry.editedAt ? ' · 已编辑' : ''}`);
+    const source = compactSource(entry.source);
+    this.text('.reader-origin', `${source.chatId || '未取得聊天标识'} · ${source.characterName} · 楼层 #${source.messageId} · ${new Date(entry.savedAt).toLocaleString('zh-CN', { hour12: false })}`);
     this.root.querySelectorAll('[data-view]').forEach(button => button.setAttribute('aria-selected', String(button.dataset.view === this.view)));
     this.$('.page-tools').hidden = this.view !== 'page';
     this.$('[data-action="reload-page"]').hidden = this.view !== 'page';
@@ -687,35 +713,11 @@ export class VaultUI {
     if (this.view === 'original') {
       const pre = this.host.document.createElement('pre'); pre.textContent = entry.original; content.append(pre); return;
     }
-    if (this.view === 'source') {
-      const dl = this.host.document.createElement('dl');
-      const fields = [['聊天名称', entry.source.chatName || '未取得'], ['聊天标识', entry.source.chatId],
-        ['角色 / 群组', entry.source.characterOrGroupName || '未取得'], ['楼层编号', `#${entry.source.messageId}`],
-        ['发言者', entry.source.speakerName || '未取得'], ['消息版本', `${entry.source.swipeId + 1}（内部编号 ${entry.source.swipeId}）`],
-        ['收藏时间', new Date(entry.savedAt).toLocaleString('zh-CN', { hour12: false })],
-        ['捕获时间', entry.source.capturedAt ? new Date(entry.source.capturedAt).toLocaleString('zh-CN', { hour12: false }) : '未取得'],
-        ['酒馆版本', entry.source.tavernVersion || '未取得'], ['储藏库版本', entry.source.vaultVersion || '未取得']];
-      if (entry.editedAt) fields.push(['内容编辑时间', new Date(entry.editedAt).toLocaleString('zh-CN', { hour12: false })]);
-      if (entry.source.helperVersion) fields.push(['原收藏的酒馆助手版本', entry.source.helperVersion]);
-      if (entry.source.selection) {
-        const rules = entry.source.selection;
-        fields.push(['提取标签', rules.includeTag ? `<${rules.includeTag}>` : '整楼'], ['排除标签', rules.excludeTags?.map(tag => `<${tag}>`).join('、') || '无']);
-      }
-      for (const [label, value] of fields) {
-        const dt = this.host.document.createElement('dt'); dt.textContent = label;
-        const dd = this.host.document.createElement('dd'); dd.textContent = value;
-        dl.append(dt, dd);
-      }
-      content.append(dl);
-      const note = this.host.document.createElement('p'); note.className = 'source-note';
-      note.textContent = '这里记录收藏时的聊天来源。收藏内容可单独编辑；原聊天之后改名或删除，不会自动改动本地收藏。';
-      content.append(note); return;
-    }
     const select = this.$('.page-select'); select.replaceChildren();
     entry.content.pages.forEach((page, index) => {
       const option = this.host.document.createElement('option'); option.value = String(index); option.textContent = page.label; select.append(option);
     });
-    const snapshot = this.host.document.createElement('option'); snapshot.value = '-1'; snapshot.textContent = '楼层显示快照'; select.append(snapshot);
+    const snapshot = this.host.document.createElement('option'); snapshot.value = '-1'; snapshot.textContent = entry.schemaVersion === 4 ? '文字预览' : '楼层显示快照'; select.append(snapshot);
     if (!entry.content.pages[this.pageIndex]) this.pageIndex = -1;
     select.value = String(this.pageIndex);
     const loading = this.host.document.createElement('p'); loading.className = 'loading'; loading.textContent = '正在读取页面…'; content.append(loading);

@@ -86,3 +86,19 @@ document.getElementById('switch-chat').onclick = () => {
 };
 document.getElementById('reload-script').onclick = loadScript;
 renderChat(); await loadScript();
+
+window.previewLegacyRecord = async () => {
+  const { digest } = await import('/src/core.js');
+  const items = await directory.getDirectoryHandle('items');
+  const item = await items.getDirectoryHandle('legacy-demo', { create: true });
+  const original = '<div><p>旧收藏的正文</p><button onclick="this.textContent=123">旧页按钮</button></div>';
+  const write = async (target, name, text) => { (await target.getFileHandle(name, { create: true })).value = text; };
+  const record = { schemaVersion: 1, id: 'legacy-demo', title: '旧时的片刻', categoryId: 'uncategorized',
+    savedAt: '2026-10-22T08:00:00.000Z', updatedAt: '2026-10-22T08:00:00.000Z',
+    source: { chatId: '旧聊天', speakerName: '旅人', messageId: 8, swipeId: 0 },
+    content: { originalFile: 'original.txt', originalSha256: await digest(original), renderedFile: 'rendered.html',
+      pages: [{ file: 'pages/page-1.html', label: '页面 1', kind: 'source' }], warnings: [] } };
+  await write(item, 'original.txt', original); await write(item, 'rendered.html', original);
+  await write(await item.getDirectoryHandle('pages', { create: true }), 'page-1.html', original);
+  await write(item, 'entry.json', JSON.stringify(record));
+};

@@ -1,64 +1,52 @@
-# 原生扩展接口与兼容边界
+# 原生扩展接口与存储约定
 
-本项目是浏览器侧 UI 扩展，入口为根目录 `manifest.json` 和 `index.js`，无需酒馆助手、服务端插件或外部打包运行时。
+这是浏览器侧 SillyTavern UI 扩展，根入口为 `manifest.json` 和 `index.js`，不依赖酒馆助手或服务端插件。
 
-## 依据
+## 宿主依据与生命周期
 
-接口核对到 SillyTavern 官方提交 `06bde939fb1e9c4c8d8641d810f0a916b5bce127`，该提交的 `package.json` 版本为 **1.19.0**。它是本次声明的版本下限与源码依据，不代表用户安装的实际版本，也不证明所有更高版本均兼容。
+接口核对到官方提交 `06bde939fb1e9c4c8d8641d810f0a916b5bce127`，对应版本 1.19.0，不代表用户的实际安装版本。
 
-- [官方扩展指南](https://docs.sillytavern.app/for-contributors/writing-extensions/)：扩展清单、ES 模块、生命周期、设置区域。
-- [官方 getContext 源码](https://github.com/SillyTavern/SillyTavern/blob/06bde939fb1e9c4c8d8641d810f0a916b5bce127/public/scripts/st-context.js)：聊天、角色、群组、事件源和事件名称。
-- [官方扩展加载器](https://github.com/SillyTavern/SillyTavern/blob/06bde939fb1e9c4c8d8641d810f0a916b5bce127/public/scripts/extensions.js)：加载入口及调用清单声明的钩子。
-- [官方服务端安装接口](https://github.com/SillyTavern/SillyTavern/blob/06bde939fb1e9c4c8d8641d810f0a916b5bce127/src/endpoints/extensions.js)：服务器通过 HTTP(S) 仓库地址执行 Git 克隆；浏览器 GitHub 登录状态不会传递为服务器 Git 凭据。
+- [官方扩展指南](https://docs.sillytavern.app/for-contributors/writing-extensions/)：清单、模块与设置。
+- [getContext](https://github.com/SillyTavern/SillyTavern/blob/06bde939fb1e9c4c8d8641d810f0a916b5bce127/public/scripts/st-context.js)：聊天和事件接口。
+- [扩展加载器](https://github.com/SillyTavern/SillyTavern/blob/06bde939fb1e9c4c8d8641d810f0a916b5bce127/public/scripts/extensions.js)：清单及钩子。
+- [安装接口](https://github.com/SillyTavern/SillyTavern/blob/06bde939fb1e9c4c8d8641d810f0a916b5bce127/src/endpoints/extensions.js)：服务端 Git 克隆，浏览器登录不会成为 Git 凭据。
 
-## 使用的接口
+使用 `SillyTavern.getContext()`，从当前 `chat[id].mes` 读取正文，不用旧 swipe 缓存替换当前编辑内容，不执行宏、消息更新或生成接口。聊天/渲染/更新事件用 `eventSource.on` 和 `removeListener` 成对订阅清理，兼容 `eventTypes` 与 `event_types`。MutationObserver 补齐旧楼层按钮。
 
-`SillyTavern.getContext()` 提供当前聊天和事件。采集读取 `context.chat[id].mes`，消息版本记录 `swipe_id`，避免把编辑后的当前正文替换成旧的 swipe 缓存。不调用显示变换、宏、消息更新或生成接口。
+清单钩子导出 `onActivate / onEnable / onDisable / onDelete`。同步挂接界面，异步尝试恢复目录；禁用、删除和页面离开解除事件、观察器、动画帧和节点，不删除磁盘收藏。设置入口优先 `#extensions_settings2`；自身按钮固定横向显示，不受宿主 min-content 挤压。
 
-事件通过 `eventSource.on` 订阅，以 `removeListener` 清理。优先用 `eventTypes`，兼容官方仍保留的 `event_types`。使用聊天切换、消息渲染/更新/切换和旧楼加载事件；DOM 变化也会补齐已显示楼层的按钮。楼层选择器为 `#chat .mes[mesid]`、`.mes_text`、`.mes_buttons`，缺少该位置时仍可从独立窗口按编号收藏。实际主题和 DOM 变动须在目标酒馆确认。
+## TXT 与集中索引
 
-扩展设置入口优先放入 `#extensions_settings2`，其次 `#extensions_settings`；同时保留浮动入口。
+v0.5.0 的根配置 `tavern-vault.json` 使用格式 2，包含原有库编号、分类、修订号，以及 `entries` 和暂未清理完的 `deleted`。不包含正文副本。每条 `entries` 记录格式为 4：稳定编号、标题、分类、收藏/修改时间、`source` 和 `content`。
 
-## 生命周期与本地数据
+`source` 仅保存 `chatId / characterName / messageId`；收藏时间为 `savedAt`。管理界面仅在标题旁显示这四项，不再有来源标签页。编辑时间和哈希仅供内部识别内容变化，界面不堆放宿主版本、消息版本、地址或筛选过程。
 
-清单中的 `activate / enable / disable / delete` 对应导出的 `onActivate / onEnable / onDisable / onDelete`。启动的同步部分挂接界面和监听；目录恢复异步进行，不等待文件系统操作完成才返回激活钩子。
+正文唯一文件为 `items/<标题>.txt`，正文逐字保存，不附带来源头。`content.originalFile` 是经校验的单个 TXT 文件名；正文哈希和页面标签用于索引，不保存 HTML 字符串或 HTML 路径。预览从 TXT 临时提取 HTML，纯文字预览也在内存中生成。原文视图使用 textContent。
 
-禁用、删除和页面离开会解除事件、观察器、待执行的动画帧及界面节点。重复启动先销毁旧实例。不会在这些操作中删除、重置或上传磁盘收藏。目录记忆沿用原版本的 IndexedDB 名称，收藏库根配置仍为 schema 1；旧收藏不自动改写。v0.4.0 兼容记录 schema 1、2，新增标题文件采用 schema 3；`content.storageId` 存在时指向该条当前内容集。
+文件名处理沿用 NFC、禁用字符替换、尾部空格/句点和系统保留名处理、长度缩短。重名使用 `(2)` 起的序号；匹配时保守地规范化大小写，不覆盖目录中任何已有名字，包括未登记文件。原文件与类别整理只影响这一份 TXT。
 
-`capability-contract.json` 列出所需能力。运行时检查宿主接口，选择文件夹时检查安全环境和 `showDirectoryPicker`。没有用户真实环境快照，尚未执行“已安装环境能力通过”的判定。
+目录句柄沿用 IndexedDB 名称，仅记入口，不缓存正文。数据以外部目录为准，读取已登记 TXT 时重新计算页面及哈希，支持用户外部改写后刷新；陌生 TXT 不自动登记。清单能力契约保持不变：目录选择、安全环境、读写和 removeEntry 必需，IndexedDB 可降级。
 
-## HTML 和筛选
+## 确认、失败与清理
 
-管理界面使用独立 Shadow DOM，收藏 HTML 用 `sandbox="allow-scripts"` 的 iframe，没有 `allow-same-origin`、目录句柄或酒馆写入接口。页面自身仍可按原代码请求外部资源；隔离预览不等于完整离线。
+编辑只有明确确认才写入同一 TXT，createWritable 关闭后重读核对。先写 TXT 再更新集中索引；未保留旧正文副本。若正文已提交而索引更新失败，明确提示这项部分成功状态，重新读取仍能读到 TXT，再次确认可补全记录。新建或改名使用新文件名，索引未提交时只清理本次创建且内容仍匹配的文件。
 
-筛选基于源文本，先找配对的提取标签，再合并排除范围。未找到提取标签、配对错误、结果为空均阻止保存。生效后不复用原显示快照或页面，而是从过滤后的原文重新生成所有副本；规则写入 `source.selection`。测试同时检查原文、快照、页面和元数据中不存在排除标记。
+整理新标题时先写完整新 TXT，再提交文件名索引，最后清理旧名称。旧名称清理要求文件内容哈希仍匹配，且不被活动收藏引用。失败保留明确的待清理信息，可重试，不把已提交内容删除。
 
-## 仍需真实酒馆检查
+删除必须经过界面确认及库编号/打开记录标记检查。先登记待删除操作并从活动列表移除，再删除对应 TXT 或已确认的旧目录；清理成功后清除操作标记，没有回收站或旧版本。根索引写入失败不开始删文件。清理失败时隐藏收藏但保留全局重试按钮，刷新后仍可继续，不丢失清理对象。
 
-在获授权的目标酒馆确认版本、扩展管理器安装、刷新加载、楼层按钮、禁用/启用、外部电脑文件夹选择与授权、重开后读取、实际角色卡 HTML 与主题兼容。合成预览、静态清单校验和浏览器内部文件读写均不替代这些项目。
+同库浏览器操作使用 navigator.locks（可用时）和单实例队列。过期编辑、整理、删除和换库阻止提交；不能承诺阻止不遵守浏览器锁的所有外部程序。
 
-## 内容编辑与本地提交
+## 旧记录兼容与整理
 
-双击列表、标题、原文或 HTML 正文可打开草稿；也有明确的编辑按钮。页面端可发送“请求打开编辑栏”或“按 Escape 还原阅读区”的消息，接收方检查当前 iframe 窗口、隔离来源和本次预览标记。消息不携带文件句柄，不提供保存命令，写盘仍需用户点击“确认保存到本地”。桥接脚本只在预览时加入，不写入收藏原文或页面文件。
+读取格式 1、2、3 的原编号目录；连接和刷新不迁移。旧记录可继续阅读原存储页面。明确确认“旧收藏整理为 TXT”后，写出原文并登记简要来源，随后删除已识别旧原文、显示副本、页面和归属明确的内容目录。不把快照塞回根 JSON，也不改变原文来夹带它。
 
-未确认时编辑内容只存在内存中，关闭即丢弃。确认后先写入并逐文件核对一个完整内容集，再通过关闭 `entry.json` 的写入流切换引用。已有来源、收藏编号、分类和 savedAt 保留；记录 editedAt。按用户要求不保留历史：随后清理原文件和工具拥有的旧内容目录。未知文件夹和不属于工具的文件不会被当作版本清理。
+转换期间只对本条已验证的目录与已知文件清理，记录目录里的额外文件保留并提示。正文仅在旧快照中存在的显示处理不会再保留。旧记录确认正文修改或新标题后也转为 TXT；单改分类不触发转换。未转换记录可直接确认删除。新版根格式要求 v0.5.0 或以上。
 
-提交前比对打开编辑栏时的内容标记、收藏库编号和磁盘原文哈希。过期编辑、换库或原文被外部改写会停止写入；不承诺阻止所有绕过浏览器锁的外部程序并发。提交状态无法核实时保留文件并提示重新读取；新内容提交成功但清理失败则返回明确的待清理状态，用户可重试。没有自动备份、历史浏览或撤销入口。
+## 隔离预览与真实环境边界
 
-相关浏览器依据：[关闭写入流后才更新文件](https://developer.mozilla.org/en-US/docs/Web/API/FileSystemFileHandle/createWritable)、[目录条目清理](https://developer.mozilla.org/en-US/docs/Web/API/FileSystemDirectoryHandle/removeEntry)、[跨窗口消息来源和目标](https://developer.mozilla.org/en-US/docs/Web/API/Window/postMessage)。这些资料说明接口语义，实际外部文件夹仍需在用户环境中验证。
+Shadow DOM 管理界面，HTML 使用 `sandbox="allow-scripts"` 的 iframe，不给 same-origin、目录句柄或酒馆写入接口。预览消息仅允许打开编辑草稿或还原阅读区，核对当前窗口、隔离来源和预览标记，不提供保存/删除命令。桥接脚本只在预览生成时加入，不写进 TXT。
 
-## 标题与文件名
+标签筛选先提取再排除；缺失、错误配对或空结果停止保存。筛选后不复用旧显示副本，所有预览由过滤后的 TXT 内容生成。
 
-新记录 schema 3 的 `content.fileBase` 保存处理后的标题，`originalFile`、`renderedFile` 和各页面路径必须精确符合该标题的命名规则。原文为 `标题.txt`，显示副本为 `标题.html`，交互第一页为 `pages/标题.html`，后续页为 `pages/标题 - 页面N.html`。所有读取按已验证的索引进行；schema 1、2 继续限制为原有固定文件名。
-
-文件名使用 NFC 形式，替换路径分隔符、控制字符和 Windows 禁用字符，处理尾部空格、句点及系统保留名称。按 [Microsoft 文件命名规则](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file) 检查常见 Windows 限制；同时限制标题基名为最多 120 个 UTF-16 单元、180 个 UTF-8 字节，过长时以省略号结尾，给扩展名和页面序号留空间。完整收藏标题保留在记录中。不同记录的编号目录隔离相同、大小写相似或处理后相同的文件名；不通过覆盖同名收藏解决冲突。不承诺任意深层路径和所有文件系统都支持。
-
-连接旧库只读，不进行批量改名。明确保存新标题时，沿用内容提交机制：逐字复制原文、显示副本与 HTML 页面到新命名的完整内容集，核对后切换记录，再清理旧文件。不会重新提取、过滤或重建这些页面，也不增加内容编辑时间。确认正文修改时则生成新的当前内容并采用标题文件名。分类单独更改不触发旧文件改名。
-
-标题改名同样核对打开整理栏时的记录标记、收藏库编号和原文哈希；失败时保留原记录，提交后清理失败则可重试。取消整理与正文编辑均不写盘。根配置和内部 `entry.json`、归属标记、目录编号不按标题改名，防止身份和分类来源引用失效。schema 3 需 v0.4.0 或以上读取。
-
-## 正文展开布局
-
-v0.3.2 的展开只改变阅读区的展示状态：收起阅读头部与工具、让正文和 iframe 占满右侧区域，桌面分类和列表保留。悬浮还原按钮保持可见；原文视图的 Escape 在宿主内处理，隔离 HTML 页的 Escape 经同一来源/窗口/预览标记校验后仅请求还原。该请求不携带保存数据或目录接口。
-
-切换使用 CSS 展示状态和焦点管理，不重建 iframe、不重新运行页面脚本，也不更新磁盘内容。无选中记录、关闭窗口或返回列表时清理展开状态。页面自身的宽度及排版不被重写。
+展开仅改变阅读区 CSS 状态，收起辅助栏，保留桌面列表；还原按钮和 Escape 不重建 iframe 或写盘。移动宽度、真实按钮交互和浏览器内部文件系统均有合成检查；实际酒馆安装、外部目录选择/权限恢复和用户体验仍需目标环境验收。
