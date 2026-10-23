@@ -1,6 +1,6 @@
 {
   "name": "tavern-vault",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "description": "SillyTavern 原生扩展：电脑文件夹聊天收藏库，支持分类、HTML 和标签筛选",

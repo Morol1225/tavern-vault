@@ -74,7 +74,9 @@ try {
   assert.match(await page.locator('#tavern-vault-root .reader-origin').textContent(), /雾港手记 - 重逢 · 楼层 #0/);
   passed('每楼收藏、新建分类、来源与原文在实际界面中关联');
   const beforeNoop = await page.evaluate(() => window.previewVaultFiles());
-  assert(Object.entries(beforeNoop).some(([name, text]) => name.endsWith('/original.txt') && text.includes('\r\n')));
+  assert(Object.entries(beforeNoop).some(([name, text]) => name.endsWith('/雨停后的重逢.txt') && text.includes('\r\n')));
+  assert(Object.keys(beforeNoop).some(name => name.endsWith('/雨停后的重逢.html')));
+  passed('本地原文和 HTML 显示副本以收藏时的标题命名，原文换行保持不变');
   await page.locator('#tavern-vault-root .reader-title').dblclick();
   await form.getByRole('button', { name: '确认保存到本地', exact: true }).click();
   await page.locator('#tavern-vault-root .sheet-veil').waitFor({ state: 'hidden' });
@@ -219,7 +221,7 @@ try {
   // Edits remain memory-only drafts until the user activates the explicit confirmation button.
   const filteredId = savedFiltered.record.id;
   const beforeEditFiles = await page.evaluate(() => window.previewVaultFiles());
-  const originalFiltered = savedFiltered.files.find(([name]) => name.endsWith('/original.txt'))[1];
+  const originalFiltered = savedFiltered.files.find(([name]) => name.endsWith(`/${savedFiltered.record.content.originalFile}`))[1];
   await page.locator('#tavern-vault-root .reader-title').dblclick();
   const editor = page.locator('#tavern-vault-root .body-input');
   await editor.waitFor({ state: 'visible' });
@@ -257,7 +259,7 @@ try {
   assert.equal(editedRecord.savedAt, savedFiltered.record.savedAt);
   assert.equal(editedRecord.cleanup, undefined);
   assert(editedRecord.editedAt);
-  assert.equal(editedFiles[`${editedPrefix}content/${editedRecord.content.storageId}/original.txt`], updatedHtml);
+  assert.equal(editedFiles[`${editedPrefix}content/${editedRecord.content.storageId}/${editedRecord.content.originalFile}`], updatedHtml);
   for (const [name, text] of Object.entries(editedFiles)) if (name.startsWith(editedPrefix)) assert.doesNotMatch(text, /保留的故事|DRAFT_MUST_NOT_SAVE|CANCELLED_DRAFT/);
   passed('HTML 正文双击进入源码编辑；确认后原文和交互页面同步、旧内容清除，页面按钮双击保持自身交互');
 
@@ -285,13 +287,13 @@ try {
   await page.locator('#tavern-vault-root .item').filter({ hasText: '星河与归途' }).dblclick();
   const priorFailureFiles = await page.evaluate(() => window.previewVaultFiles());
   await editor.fill('写入重试后的归途');
-  await page.evaluate(() => window.previewFsFailure({ fail: '/original.txt' }));
+  await page.evaluate(() => window.previewFsFailure({ fail: '/星河与归途.txt' }));
   await form.getByRole('button', { name: '确认保存到本地', exact: true }).click();
   await form.locator('.form-error').waitFor({ state: 'visible' });
   assert.match(await form.locator('.form-error').textContent(), /磁盘空间不足/);
   assert.equal(await editor.inputValue(), '写入重试后的归途');
   assert.deepEqual(await page.evaluate(() => window.previewVaultFiles()), priorFailureFiles);
-  await page.evaluate(() => window.previewFsFailure({ fail: '', failRemove: '/original.txt' }));
+  await page.evaluate(() => window.previewFsFailure({ fail: '', failRemove: '/星河与归途.txt' }));
   await form.getByRole('button', { name: '确认保存到本地', exact: true }).click();
   await page.locator('#tavern-vault-root .sheet-veil').waitFor({ state: 'hidden' });
   await page.locator('#tavern-vault-root .cleanup-note').waitFor({ state: 'visible' });
@@ -300,6 +302,32 @@ try {
   await page.getByRole('button', { name: '重试清理', exact: true }).click();
   await page.locator('#tavern-vault-root .cleanup-note').waitFor({ state: 'hidden' });
   passed('写入失败保留编辑草稿和原记录，清理失败单独提示且能重试完成');
+
+  const beforeRename = await page.evaluate(() => window.previewVaultFiles());
+  await page.getByRole('button', { name: '整理', exact: true }).click();
+  await form.locator('.title-input').fill('归途/续章');
+  assert.equal(await form.locator('.file-hint').textContent(), '本地原文：归途_续章.txt');
+  await form.getByRole('button', { name: '取消', exact: true }).click();
+  assert.deepEqual(await page.evaluate(() => window.previewVaultFiles()), beforeRename);
+  await page.getByRole('button', { name: '整理', exact: true }).click();
+  await form.locator('.title-input').fill('归途/续章');
+  await form.getByRole('button', { name: '保存整理', exact: true }).click();
+  await page.locator('#tavern-vault-root .sheet-veil').waitFor({ state: 'hidden' });
+  const afterRename = await page.evaluate(() => window.previewVaultFiles());
+  const renamedMarker = Object.entries(afterRename).find(([name, text]) => name.endsWith('/entry.json') && JSON.parse(text).title === '归途/续章');
+  assert(renamedMarker);
+  const renamedRecord = JSON.parse(renamedMarker[1]);
+  const renamedPrefix = renamedMarker[0].slice(0, -'entry.json'.length);
+  assert.equal(renamedRecord.content.originalFile, '归途_续章.txt');
+  assert.equal(afterRename[`${renamedPrefix}content/${renamedRecord.content.storageId}/归途_续章.txt`], '写入重试后的归途');
+  assert(!Object.keys(afterRename).some(name => name.startsWith(renamedPrefix) && /星河与归途\.(txt|html)$/.test(name)));
+  await page.getByRole('button', { name: '关闭储藏库', exact: true }).click();
+  await page.getByRole('button', { name: '重载扩展', exact: true }).click();
+  await page.getByRole('button', { name: '打开储藏库', exact: true }).click();
+  await page.locator('#tavern-vault-root .item').filter({ hasText: '归途/续章' }).click();
+  await page.getByRole('tab', { name: '原文', exact: true }).click();
+  assert.equal(await page.locator('#tavern-vault-root .content pre').textContent(), '写入重试后的归途');
+  passed('整理时预览安全文件名，取消不写盘，确认后同步改名、清理旧名称并可重载恢复');
 
   const dimensions = [];
   for (const width of [390, 320]) {
@@ -400,16 +428,23 @@ try {
     if (afterEdit.entries[0].original !== '<div>原生编辑已保存</div>') throw new Error('原生编辑恢复失败');
     const itemDirectory = await (await directory.getDirectoryHandle('items')).getDirectoryHandle(result.entry.id);
     let oldBodyPresent = false;
-    try { await itemDirectory.getFileHandle('original.txt'); oldBodyPresent = true; } catch (error) { if (error.name !== 'NotFoundError') throw error; }
+    try { await itemDirectory.getFileHandle(result.entry.content.originalFile); oldBodyPresent = true; } catch (error) { if (error.name !== 'NotFoundError') throw error; }
     if (oldBodyPresent) throw new Error('原生旧版本仍存在');
-    return { confirmedEditRoundTrip: true, oldContentRemoved: true, kind: 'origin-private-file-system', directoryHandleNative: true, nativePermissionMethods,
+    const renamed = await afterEdit.edit(result.entry.id, { title: '原生/改名', categoryId: afterEdit.entries[0].categoryId,
+      expectedToken: editToken(afterEdit.entries[0]), expectedLibraryId: afterEdit.meta.libraryId });
+    if (renamed.cleanup || renamed.content.originalFile !== '原生_改名.txt') throw new Error('原生标题改名失败');
+    const namedDirectory = await (await itemDirectory.getDirectoryHandle('content')).getDirectoryHandle(renamed.content.storageId);
+    if (await (await (await namedDirectory.getFileHandle('原生_改名.txt')).getFile()).text() !== '<div>原生编辑已保存</div>') throw new Error('原生标题文件内容不一致');
+    const afterRename = new VaultStorage(window); await afterRename.attach(adapt(restoredHandle), false);
+    if (afterRename.entries[0].title !== '原生/改名' || await afterRename.readPage(afterRename.entries[0], 0) !== '<div>原生编辑已保存</div>') throw new Error('原生改名重读失败');
+    return { namedFilesRoundTrip: true, titleRenameRoundTrip: true, confirmedEditRoundTrip: true, oldContentRemoved: true, kind: 'origin-private-file-system', directoryHandleNative: true, nativePermissionMethods,
       originalRestored: true, pagesRestored: true, nativeIndexedDbHandleRoundTrip: true,
       userChosenExternalFolder: false };
   });
   await nativePage.close();
   passed('浏览器原生文件系统实际写入、重读与 IndexedDB 目录句柄恢复（不是外部文件夹授权）');
   const build = JSON.parse(await fs.readFile(path.join(root, 'dist/build-manifest.json'), 'utf8'));
-  const evidence = { date: new Date().toISOString(), kind: 'synthetic-browser', productVersion: '0.3.2', browser: browser.version(),
+  const evidence = { date: new Date().toISOString(), kind: 'synthetic-browser', productVersion: '0.4.0', browser: browser.version(),
     realSillyTavern: false, fileSystem: 'in-memory FileSystemDirectoryHandle adapter', build,
     results, errors, dimensions, settingsLayout, expandedReading, nativeFs, screenshots: {} };
   for (const name of await fs.readdir(evidenceRoot)) if (name.endsWith('.png')) {

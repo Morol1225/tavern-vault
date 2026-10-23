@@ -1,4 +1,4 @@
-import { VERSION, UNFILED, sourceLabel, normalized, friendlyError, assert, editToken } from './core.js';
+import { VERSION, UNFILED, sourceLabel, normalized, friendlyError, assert, editToken, titleFileBase } from './core.js';
 import { captureFloor, preparePreview } from './capture.js';
 import { selectDraft } from './selection.js';
 
@@ -70,7 +70,7 @@ const SHELL = `
       <form class="sheet" role="dialog" aria-modal="true" aria-labelledby="tv-sheet-title">
         <header><span class="sheet-symbol">${icon('bookmark')}</span><div><h2 id="tv-sheet-title">收藏楼层</h2><p class="sheet-intro">保存此刻的内容，以后随时重读。</p></div><button type="button" data-action="cancel-form" class="icon-button" aria-label="关闭收藏栏">${icon('close')}</button></header>
         <p class="draft-source"></p><p class="draft-summary"></p>
-        <label class="field title-field"><span class="title-label">收藏标题</span><input class="title-input" required maxlength="160" autocomplete="off"></label>
+        <label class="field title-field"><span class="title-label">收藏标题</span><input class="title-input" required maxlength="160" autocomplete="off"><small class="file-hint"></small></label>
         <div class="category-fields"><label class="field">归入分类<select class="category-select"></select></label><button type="button" class="new-category-toggle text-button" data-action="toggle-category">${icon('plus')}新建分类</button><label class="field new-category-field" hidden>新分类名称<input class="new-category-input" maxlength="80" autocomplete="off" placeholder="例如：喜欢的剧情"></label></div>
         <section class="editor-fields" hidden>
           <p class="editor-help">编辑文字或 HTML 源码。点击“确认保存到本地”前只修改草稿；确认后替换本地内容，不保留旧版本。</p>
@@ -155,7 +155,7 @@ export class VaultUI {
     this.$('.body-input').addEventListener('input', () => {
       this.text('.editor-state', this.$('.body-input').value === this.contentBaseline ? '内容尚未修改。' : '草稿尚未保存，确认后才会更新本地文件。');
     });
-    this.$('.title-input').addEventListener('input', () => { this.titleEdited = true; });
+    this.$('.title-input').addEventListener('input', () => { this.titleEdited = true; this.updateFilenamePreview(); });
     for (const selector of ['.include-tag-input', '.exclude-tags-input']) this.$(selector).addEventListener('input', () => this.updateSelection());
     this.$('.sheet').addEventListener('submit', event => { event.preventDefault(); this.submitForm(); });
     this.$('.number-sheet').addEventListener('submit', event => {
@@ -427,8 +427,8 @@ export class VaultUI {
     this.$('.body-input').value = mode === 'content' ? draft.original : '';
     this.contentBaseline = this.$('.body-input').value;
     this.originalEditText = mode === 'content' ? draft.original : '';
-    this.expectedEditToken = mode === 'content' ? editToken(draft) : null;
-    this.editLibraryId = mode === 'content' ? this.storage.meta?.libraryId : null;
+    this.expectedEditToken = ['content', 'edit'].includes(mode) ? editToken(draft) : null;
+    this.editLibraryId = ['content', 'edit'].includes(mode) ? this.storage.meta?.libraryId : null;
     this.text('.editor-state', '内容尚未修改。');
     this.titleEdited = false;
     this.filteredDraft = null;
@@ -450,6 +450,7 @@ export class VaultUI {
     const input = this.$('.title-input');
     input.maxLength = mode === 'category' ? 80 : 160;
     input.value = mode === 'new' ? draft.suggestedTitle : ['edit', 'content'].includes(mode) ? draft.title : '';
+    this.updateFilenamePreview();
     if (draft) {
       this.text('.draft-source', sourceLabel(draft.source));
       this.text('.draft-summary', `${draft.source.speakerName || '未取得发言者'} · 消息版本 ${draft.source.swipeId + 1} · ${(draft.original || '').length.toLocaleString()} 字符`);
@@ -502,6 +503,15 @@ export class VaultUI {
       this.text('.selection-preview', '规则尚未匹配有效内容，当前不能保存。');
       if (!this.titleEdited) this.$('.title-input').value = '未命名收藏';
     }
+    this.updateFilenamePreview();
+  }
+
+  updateFilenamePreview() {
+    this.$('.file-hint').hidden = !['new', 'edit'].includes(this.mode);
+    const title = this.$('.title-input').value.trim();
+    const file = this.mode === 'edit' && title === this.draft.title
+      ? this.draft.content.originalFile : `${titleFileBase(title)}.txt`;
+    this.text('.file-hint', `本地原文：${file}`);
   }
 
   async submitForm() {
@@ -534,9 +544,11 @@ export class VaultUI {
         this.notice(result.unchanged ? '内容没有变化，本地文件未改动。' : result.cleanupPending ? '新内容已保存，但旧文件尚未清理完；请在阅读区重试清理。' : '修改已确认保存到本地，旧内容已清理。', result.cleanupPending);
         this.clearContentEditor();
       } else if (this.mode === 'edit') {
-        await this.storage.edit(this.draft.id, options);
+        const result = await this.storage.edit(this.draft.id, { ...options,
+          expectedToken: this.expectedEditToken, expectedLibraryId: this.editLibraryId });
         this.category = '*';
-        this.notice('标题与分类已更新，原文和来源保持不变。');
+        this.notice(result.cleanup ? '整理已保存，但旧文件尚未清理完；请在阅读区重试清理。'
+          : result.schemaVersion === 3 ? '整理已保存，文件名与标题同步。' : '整理已保存。', Boolean(result.cleanup));
       } else {
         const result = await this.storage.save(this.filteredDraft, options);
         this.selectedId = result.entry.id;

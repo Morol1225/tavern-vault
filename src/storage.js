@@ -1,4 +1,4 @@
-import { PRODUCT, SCHEMA_VERSION, UNFILED, META_FILE, assert, normalized, safeId, newId, digest, validateMeta, validateEntry, sameSnapshot, extractHtmlPages, editToken } from './core.js';
+import { PRODUCT, SCHEMA_VERSION, UNFILED, META_FILE, assert, normalized, safeId, newId, digest, validateMeta, validateEntry, sameSnapshot, extractHtmlPages, editToken, titleFileBase, contentFileNames } from './core.js';
 
 async function readFile(directory, name) {
   return (await (await directory.getFileHandle(name)).getFile()).text();
@@ -32,6 +32,24 @@ async function writeFile(directory, name, text) {
     try { await stream?.abort(); } catch { /* The stream may already be closed. */ }
     throw error;
   }
+}
+
+async function writeContentFiles(directory, record, { original, rendered, pages }) {
+  await writeFile(directory, record.content.originalFile, original);
+  await writeFile(directory, record.content.renderedFile, rendered);
+  if (pages.length) {
+    const pageDirectory = await directory.getDirectoryHandle('pages', { create: true });
+    for (const [index, page] of pages.entries()) {
+      await writeFile(pageDirectory, record.content.pages[index].file.slice('pages/'.length), page.html);
+    }
+  }
+}
+
+function namedContent(content, title, pages) {
+  const fileBase = titleFileBase(title);
+  const names = contentFileNames(fileBase, pages.length);
+  return { ...content, fileBase, originalFile: names.originalFile, renderedFile: names.renderedFile,
+    pages: pages.map((page, index) => ({ ...page, file: names.pageFiles[index] })) };
 }
 
 async function mapLimited(values, action, limit = 6) {
@@ -99,7 +117,7 @@ export class VaultStorage {
         const raw = await optionalFile(directory, 'entry.json');
         if (raw === null) { issues.push({ id: directory.name, message: '未完成的收藏，已略过' }); return null; }
         const record = validateEntry(JSON.parse(raw), directory.name);
-        const original = await readFile(await contentDirectory(directory, record), 'original.txt');
+        const original = await readFile(await contentDirectory(directory, record), record.content.originalFile);
         assert(await digest(original) === record.content.originalSha256, '原文已变动，校验不一致');
         return { ...record, original };
       } catch (error) {
@@ -165,17 +183,11 @@ export class VaultStorage {
       const pages = draft.pages || [];
       assert(pages.length <= 100, '一个楼层最多保存 100 个 HTML 页面。');
       const now = new Date().toISOString();
-      const record = { schemaVersion: SCHEMA_VERSION, id, title, categoryId, savedAt: now, updatedAt: now,
-        source: { ...draft.source }, content: { originalFile: 'original.txt', originalSha256: sha256,
-          renderedFile: 'rendered.html', pages: pages.map((page, i) => ({ file: `pages/page-${i + 1}.html`, label: page.label, kind: page.kind })),
-          warnings: [...(draft.warnings || [])] } };
+      const record = { schemaVersion: 3, id, title, categoryId, savedAt: now, updatedAt: now,
+        source: { ...draft.source }, content: namedContent({ originalSha256: sha256,
+          warnings: [...(draft.warnings || [])] }, title, pages.map(page => ({ label: page.label, kind: page.kind }))) };
       validateEntry(record, id);
-      await writeFile(directory, 'original.txt', draft.original);
-      await writeFile(directory, 'rendered.html', draft.rendered || '');
-      if (pages.length) {
-        const pageDirectory = await directory.getDirectoryHandle('pages', { create: true });
-        for (const [index, page] of pages.entries()) await writeFile(pageDirectory, `page-${index + 1}.html`, page.html);
-      }
+      await writeContentFiles(directory, record, { original: draft.original, rendered: draft.rendered || '', pages });
       await writeFile(directory, 'entry.json', JSON.stringify(record, null, 2));
       const entry = { ...record, original: draft.original };
       this.entries.unshift(entry);
@@ -187,11 +199,29 @@ export class VaultStorage {
     return this.mutate(async () => {
       assert(safeId(id), '收藏编号无效。');
       const directory = await (await this.directory.getDirectoryHandle('items')).getDirectoryHandle(id);
-      const record = validateEntry(JSON.parse(await readFile(directory, 'entry.json')), id);
+      const before = await readFile(directory, 'entry.json');
+      const record = validateEntry(JSON.parse(before), id);
+      if (options.expectedLibraryId != null) assert(options.expectedLibraryId === this.meta.libraryId,
+        '整理期间更换了收藏库，尚未保存。请连接原收藏文件夹后重试。');
+      if (options.expectedToken != null) assert(options.expectedToken === editToken(record),
+        '这条收藏已在别处修改，请取消整理并重新读取后再修改；当前修改尚未保存。');
       const title = String(options.title || '').trim();
       assert(title && title.length <= 160, '请填写标题，最多 160 个字符。');
       const categoryId = await this.ensureCategory(options);
       const next = { ...record, title, categoryId, updatedAt: new Date().toISOString() };
+      if (title !== record.title && (record.schemaVersion !== 3 || titleFileBase(title) !== record.content.fileBase)) {
+        const active = await contentDirectory(directory, record);
+        const original = await readFile(active, record.content.originalFile);
+        assert(await digest(original) === record.content.originalSha256, '本地原文已被外部修改，已停止保存。请先重新读取并检查。');
+        const rendered = await readFile(active, record.content.renderedFile);
+        const pages = [];
+        if (record.content.pages.length) {
+          const pageDirectory = await active.getDirectoryHandle('pages');
+          for (const page of record.content.pages) pages.push({ html: await readFile(pageDirectory, page.file.slice('pages/'.length)) });
+        }
+        next.content = namedContent(record.content, title, record.content.pages);
+        return (await this.replaceContent(directory, before, record, next, { original, rendered, pages })).entry;
+      }
       await writeFile(directory, 'entry.json', JSON.stringify(next, null, 2));
       const local = this.entries.find(entry => entry.id === id);
       if (local) Object.assign(local, next);
@@ -209,52 +239,54 @@ export class VaultStorage {
       const before = await readFile(directory, 'entry.json');
       const record = validateEntry(JSON.parse(before), id);
       assert(expectedToken === editToken(record), '这条收藏已在别处修改，请取消编辑并重新读取后再修改；当前草稿尚未保存。');
-      const prior = await readFile(await contentDirectory(directory, record), 'original.txt');
+      const prior = await readFile(await contentDirectory(directory, record), record.content.originalFile);
       assert(await digest(prior) === record.content.originalSha256, '本地原文已被外部修改，已停止保存。请先重新读取并检查。');
       if (original === prior) return { entry: { ...record, original }, unchanged: true, cleanupPending: Boolean(record.cleanup) };
-      assert(typeof directory.removeEntry === 'function', '浏览器无法清理旧内容，已停止保存。请更新电脑 Chrome/Edge 后重试。');
-      const storageId = newId();
-      const content = await directory.getDirectoryHandle('content', { create: true });
-      const staging = await content.getDirectoryHandle(storageId, { create: true });
       const pages = extractHtmlPages(original);
       const escaped = original.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
       const now = new Date().toISOString();
-      const next = { ...record, schemaVersion: 2, updatedAt: now, editedAt: now,
-        content: { ...record.content, storageId, originalSha256: await digest(original),
-          pages: pages.map((page, index) => ({ file: `pages/page-${index + 1}.html`, label: page.label, kind: page.kind })),
+      const next = { ...record, updatedAt: now, editedAt: now,
+        content: namedContent({ ...record.content, originalSha256: await digest(original),
           warnings: ['此内容由你编辑后保存，显示副本和 HTML 页面均按修改后的原文生成。',
-            ...(pages.length ? ['页面自身交互可用；依赖酒馆或外部资源的功能可能无法运行。'] : [])] },
-        cleanup: { legacyPageCount: record.content.storageId ? (record.cleanup?.legacyPageCount ?? -1) : record.content.pages.length } };
-      validateEntry(next, id);
-      let commitAttempted = false;
-      try {
-        await writeFile(staging, '.owned.json', JSON.stringify({ product: PRODUCT, entryId: id, storageId }));
-        await writeFile(staging, 'original.txt', original);
-        await writeFile(staging, 'rendered.html', `<pre style="white-space:pre-wrap">${escaped}</pre>`);
-        if (pages.length) {
-          const pageDirectory = await staging.getDirectoryHandle('pages', { create: true });
-          for (const [index, page] of pages.entries()) await writeFile(pageDirectory, `page-${index + 1}.html`, page.html);
-        }
-        assert(await readFile(directory, 'entry.json') === before, '保存期间收藏已在别处修改，已停止提交，请重新读取。');
-        // A single closed file selects the complete content set. Old content is untouched until this commit.
-        commitAttempted = true;
-        await writeFile(directory, 'entry.json', JSON.stringify(next, null, 2));
-      } catch (error) {
-        // If closing the marker succeeded but readback failed, the new set might already be active.
-        // Never delete it when the commit outcome is uncertain.
-        if (!commitAttempted) { try { await content.removeEntry(storageId, { recursive: true }); } catch { /* Report original error. */ } }
-        if (commitAttempted) throw new Error('保存结果尚未确认，请重新授权并重新读取收藏，确认当前内容后再编辑；当前草稿仍保留。', { cause: error });
-        throw error;
-      }
-      let active = next;
-      let cleanupPending = false;
-      try { active = await this.finishContentCleanup(directory, next); }
-      catch { cleanupPending = true; }
-      const entry = { ...active, original };
-      const at = this.entries.findIndex(value => value.id === id);
-      if (at >= 0) this.entries[at] = entry;
-      return { entry, unchanged: false, cleanupPending };
+            ...(pages.length ? ['页面自身交互可用；依赖酒馆或外部资源的功能可能无法运行。'] : [])] }, record.title,
+        pages.map(page => ({ label: page.label, kind: page.kind }))) };
+      return { ...await this.replaceContent(directory, before, record, next,
+        { original, rendered: `<pre style="white-space:pre-wrap">${escaped}</pre>`, pages }), unchanged: false };
     });
+  }
+
+  async replaceContent(directory, before, record, next, body) {
+    assert(typeof directory.removeEntry === 'function', '浏览器无法清理旧内容，已停止保存。请更新电脑 Chrome/Edge 后重试。');
+    const storageId = newId();
+    next = { ...next, schemaVersion: 3, content: { ...next.content, storageId },
+      cleanup: record.content.storageId ? { ...(record.cleanup || { legacyPageCount: -1 }) }
+        : { legacyPageCount: record.content.pages.length,
+          ...(record.content.fileBase != null ? { legacyFileBase: record.content.fileBase } : {}) } };
+    validateEntry(next, record.id);
+    const content = await directory.getDirectoryHandle('content', { create: true });
+    const staging = await content.getDirectoryHandle(storageId, { create: true });
+    let commitAttempted = false;
+    try {
+      await writeFile(staging, '.owned.json', JSON.stringify({ product: PRODUCT, entryId: record.id, storageId }));
+      await writeContentFiles(staging, next, body);
+      assert(await readFile(directory, 'entry.json') === before, '保存期间收藏已在别处修改，已停止提交，请重新读取。');
+      // A single closed file selects the complete content set. Old content is untouched until this commit.
+      commitAttempted = true;
+      await writeFile(directory, 'entry.json', JSON.stringify(next, null, 2));
+    } catch (error) {
+      // A failed readback may follow a successful marker close. Never delete a possibly active set.
+      if (!commitAttempted) { try { await content.removeEntry(storageId, { recursive: true }); } catch { /* Report original error. */ } }
+      if (commitAttempted) throw new Error('保存结果尚未确认，请重新授权并重新读取收藏，确认当前内容后再修改；当前草稿仍保留。', { cause: error });
+      throw error;
+    }
+    let active = next;
+    let cleanupPending = false;
+    try { active = await this.finishContentCleanup(directory, next); }
+    catch { cleanupPending = true; }
+    const entry = { ...active, original: body.original };
+    const at = this.entries.findIndex(value => value.id === record.id);
+    if (at >= 0) this.entries[at] = entry;
+    return { entry, cleanupPending };
   }
 
   async finishContentCleanup(directory, record) {
@@ -273,12 +305,13 @@ export class VaultStorage {
       }
     }
     if (record.cleanup.legacyPageCount >= 0) {
-      await removeIfPresent(directory, 'original.txt');
-      await removeIfPresent(directory, 'rendered.html');
+      const names = contentFileNames(record.cleanup.legacyFileBase, record.cleanup.legacyPageCount);
+      await removeIfPresent(directory, names.originalFile);
+      await removeIfPresent(directory, names.renderedFile);
       let pages;
       try { pages = await directory.getDirectoryHandle('pages'); }
       catch (error) { if (error.name !== 'NotFoundError') throw error; }
-      if (pages) for (let index = 0; index < record.cleanup.legacyPageCount; index++) await removeIfPresent(pages, `page-${index + 1}.html`);
+      if (pages) for (const file of names.pageFiles) await removeIfPresent(pages, file.slice('pages/'.length));
     }
     const clean = { ...record };
     delete clean.cleanup;
@@ -302,9 +335,9 @@ export class VaultStorage {
     validateEntry(entry, entry.id);
     const item = await (await this.directory.getDirectoryHandle('items')).getDirectoryHandle(entry.id);
     const directory = await contentDirectory(item, entry);
-    if (index === -1) return readFile(directory, 'rendered.html');
+    if (index === -1) return readFile(directory, entry.content.renderedFile);
     assert(Number.isInteger(index) && index >= 0 && index < entry.content.pages.length, '页面编号无效。');
-    return readFile(await directory.getDirectoryHandle('pages'), `page-${index + 1}.html`);
+    return readFile(await directory.getDirectoryHandle('pages'), entry.content.pages[index].file.slice('pages/'.length));
   }
 }
 

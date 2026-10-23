@@ -23,7 +23,7 @@
 
 清单中的 `activate / enable / disable / delete` 对应导出的 `onActivate / onEnable / onDisable / onDelete`。启动的同步部分挂接界面和监听；目录恢复异步进行，不等待文件系统操作完成才返回激活钩子。
 
-禁用、删除和页面离开会解除事件、观察器、待执行的动画帧及界面节点。重复启动先销毁旧实例。不会在这些操作中删除、重置或上传磁盘收藏。目录记忆沿用原版本的 IndexedDB 名称，收藏库根配置仍为 schema 1；未编辑的旧收藏不自动改写。v0.3.0 编辑提交后的单条记录使用 schema 2，`content.storageId` 指向该条当前内容集，旧版不能读取这类记录。
+禁用、删除和页面离开会解除事件、观察器、待执行的动画帧及界面节点。重复启动先销毁旧实例。不会在这些操作中删除、重置或上传磁盘收藏。目录记忆沿用原版本的 IndexedDB 名称，收藏库根配置仍为 schema 1；旧收藏不自动改写。v0.4.0 兼容记录 schema 1、2，新增标题文件采用 schema 3；`content.storageId` 存在时指向该条当前内容集。
 
 `capability-contract.json` 列出所需能力。运行时检查宿主接口，选择文件夹时检查安全环境和 `showDirectoryPicker`。没有用户真实环境快照，尚未执行“已安装环境能力通过”的判定。
 
@@ -46,6 +46,16 @@
 提交前比对打开编辑栏时的内容标记、收藏库编号和磁盘原文哈希。过期编辑、换库或原文被外部改写会停止写入；不承诺阻止所有绕过浏览器锁的外部程序并发。提交状态无法核实时保留文件并提示重新读取；新内容提交成功但清理失败则返回明确的待清理状态，用户可重试。没有自动备份、历史浏览或撤销入口。
 
 相关浏览器依据：[关闭写入流后才更新文件](https://developer.mozilla.org/en-US/docs/Web/API/FileSystemFileHandle/createWritable)、[目录条目清理](https://developer.mozilla.org/en-US/docs/Web/API/FileSystemDirectoryHandle/removeEntry)、[跨窗口消息来源和目标](https://developer.mozilla.org/en-US/docs/Web/API/Window/postMessage)。这些资料说明接口语义，实际外部文件夹仍需在用户环境中验证。
+
+## 标题与文件名
+
+新记录 schema 3 的 `content.fileBase` 保存处理后的标题，`originalFile`、`renderedFile` 和各页面路径必须精确符合该标题的命名规则。原文为 `标题.txt`，显示副本为 `标题.html`，交互第一页为 `pages/标题.html`，后续页为 `pages/标题 - 页面N.html`。所有读取按已验证的索引进行；schema 1、2 继续限制为原有固定文件名。
+
+文件名使用 NFC 形式，替换路径分隔符、控制字符和 Windows 禁用字符，处理尾部空格、句点及系统保留名称。按 [Microsoft 文件命名规则](https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file) 检查常见 Windows 限制；同时限制标题基名为最多 120 个 UTF-16 单元、180 个 UTF-8 字节，过长时以省略号结尾，给扩展名和页面序号留空间。完整收藏标题保留在记录中。不同记录的编号目录隔离相同、大小写相似或处理后相同的文件名；不通过覆盖同名收藏解决冲突。不承诺任意深层路径和所有文件系统都支持。
+
+连接旧库只读，不进行批量改名。明确保存新标题时，沿用内容提交机制：逐字复制原文、显示副本与 HTML 页面到新命名的完整内容集，核对后切换记录，再清理旧文件。不会重新提取、过滤或重建这些页面，也不增加内容编辑时间。确认正文修改时则生成新的当前内容并采用标题文件名。分类单独更改不触发旧文件改名。
+
+标题改名同样核对打开整理栏时的记录标记、收藏库编号和原文哈希；失败时保留原记录，提交后清理失败则可重试。取消整理与正文编辑均不写盘。根配置和内部 `entry.json`、归属标记、目录编号不按标题改名，防止身份和分类来源引用失效。schema 3 需 v0.4.0 或以上读取。
 
 ## 正文展开布局
 

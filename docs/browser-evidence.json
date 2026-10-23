@@ -1,27 +1,27 @@
 {
-  "date": "2026-10-22T20:36:27.158Z",
+  "date": "2026-10-23T10:20:05.416Z",
   "kind": "synthetic-browser",
-  "productVersion": "0.3.2",
+  "productVersion": "0.4.0",
   "browser": "151.0.7922.34",
   "realSillyTavern": false,
   "fileSystem": "in-memory FileSystemDirectoryHandle adapter",
   "build": {
-    "version": "0.3.2",
+    "version": "0.4.0",
     "deliveryMode": "extension",
     "kind": "sillytavern-ui-extension",
     "sources": {
-      "src/core.js": "5ca721d97eb2cfb876c9bb141335971eb5fb4dfcc63713d1f4ab4124d54f53e4",
-      "src/storage.js": "99709e97e049b445c1458d4f76561a41e837fb608a21c8d55a317903447fa581",
+      "src/core.js": "5e3b9cb2614d91689c9e2ab06077ef01eee8662fc293315893de43beb5587317",
+      "src/storage.js": "5a9cc3d158684e57614d94900fe55444ac9b68ba19d67488fc363309c2f4942f",
       "src/capture.js": "97287c03e57d29f76e4e2a4c2b007b6e0ff5411678339617b5e3cbbf9167aebc",
       "src/selection.js": "e088b909b5c6a91f66969cbc972ab1ac6599ffef352f1dec68129d13951a1299",
       "src/host.js": "f2d74dc1752968210fd83a548f1d0b2950621412757a30465271e9172db29e71",
-      "src/ui.js": "dfccd6b1c56bed45f10896a184c8dbd50a7cba7e5d3aba74d96e7e68ef8a77c1",
+      "src/ui.js": "786055dc119424094b82d2276e193784c2ced8bad76435986d21dafad8caf8d8",
       "src/entry.js": "14699ec46e49cd2bd34c7660156da1890226edab5c0b9d386127ed3395186801",
-      "src/ui.css": "fbb4c8f6c27e0bed64b7faeb8423e7f83fd38083df51664efd4dff7863dc42d9"
+      "src/ui.css": "5cf199a08d72561651597b91d60b30fc715fade859f8fdc0473961c5a02601e0"
     },
     "artifacts": {
-      "index.js": "074b5bfea214bc4db41af9b972b111f776f0a49fb029a48d7a6fccb10ddbbee5",
-      "manifest.json": "4c1e8ac5c565d2707521bb0bbd88304f2ee123be318682ab808835a5066f8f36"
+      "index.js": "81edb7d835454c2cf5c7deb147018da65ee7ce9bf0b504f9c50b15d5adaaff28",
+      "manifest.json": "75f34fe3d3cf76b3ea2ebf2b647a6abc35c4bce6ba27c7bad4bb139495f032aa"
     }
   },
   "results": [
@@ -39,6 +39,10 @@
     },
     {
       "name": "每楼收藏、新建分类、来源与原文在实际界面中关联",
+      "result": "passed"
+    },
+    {
+      "name": "本地原文和 HTML 显示副本以收藏时的标题命名，原文换行保持不变",
       "result": "passed"
     },
     {
@@ -91,6 +95,10 @@
     },
     {
       "name": "写入失败保留编辑草稿和原记录，清理失败单独提示且能重试完成",
+      "result": "passed"
+    },
+    {
+      "name": "整理时预览安全文件名，取消不写盘，确认后同步改名、清理旧名称并可重载恢复",
       "result": "passed"
     },
     {
@@ -188,6 +196,8 @@
     }
   },
   "nativeFs": {
+    "namedFilesRoundTrip": true,
+    "titleRenameRoundTrip": true,
     "confirmedEditRoundTrip": true,
     "oldContentRemoved": true,
     "kind": "origin-private-file-system",
@@ -199,13 +209,13 @@
     "userChosenExternalFolder": false
   },
   "screenshots": {
-    "collector-desktop.png": "40023dbda81584ccf4cdb0f27069ae65928312e618400f168c07fc1c48653f11",
+    "collector-desktop.png": "1ddc3052f535e624348e13efe073d3008134b8fe70c596e9866f0039f8e21df6",
     "editor-320.png": "7122a99bf2ba9e0d24e4389fd2a476e8de3e0512499d22b45662d272dbcc955d",
-    "editor-desktop.png": "760507f6410e3a95c3102531f6fffb57532f3a4a105ca992b40252481269c164",
-    "library-320.png": "838f14969ed79c89d7e12dbf8340fe0cc2fe3afe89a4af9402129f7f2cf4c26e",
-    "library-390.png": "9a30953d0961008727a6ed1d472afb0fe02301fa0300b4b3007148d279759429",
-    "library-desktop.png": "f895db72c7a6828c6f9024dddf1adb5a38536ab7c5a0874cd656f14be806c0cd",
-    "library-expanded-320.png": "7bcef608b9eeda03eef770e088b5502c98c24b12d9c87d2cc66d22bcd7750790",
+    "editor-desktop.png": "e93094f786d1d263b59190658618578951f5720b5a50c12a5b4f584605013c63",
+    "library-320.png": "0cf743eba2593b8dea4297433135077b870b7fc8c887d9cee93337819210b2ca",
+    "library-390.png": "5b87c63ebba8e20b1f2573b43bfcbd72a65548f1be0b45e16cedf5cd00a7bdb8",
+    "library-desktop.png": "fc742ad31615d99c13de2fc0e0d6246d5e6aa37834b478fb21c10bdfafdd07f5",
+    "library-expanded-320.png": "a24975e15bce3af2b84f37e20ae0538b734ebd91c781eb757f629f52947ea692",
     "library-expanded.png": "fac5d538d4feb9de1ca0a2ce8fb93bb159aae1812e87f63fbbc067c132306ab9",
     "settings-entry.png": "05963566b596069225a0feb541472f2c1663c07cdfce48cd71787c78586e491a"
   }

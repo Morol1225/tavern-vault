@@ -1,4 +1,4 @@
-export const VERSION = '0.3.2';
+export const VERSION = '0.4.0';
 export const PRODUCT = 'tavern-vault';
 export const SCHEMA_VERSION = 1;
 export const UNFILED = 'uncategorized';
@@ -14,6 +14,41 @@ export function normalized(value) {
 
 export function safeId(value) {
   return typeof value === 'string' && /^[a-zA-Z0-9_-]{1,80}$/.test(value);
+}
+
+export function titleFileBase(title) {
+  let name = String(title ?? '').normalize('NFC')
+    .replace(/[\u0000-\u001f\u007f<>:"/\\|?*\u202a-\u202e\u2066-\u2069\ud800-\udfff]/gu, '_')
+    .trim().replace(/[. ]+$/g, '');
+  if (!name) name = '未命名收藏';
+  if (/^(?:CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³]|CONIN\$|CONOUT\$)$/i.test(name.split('.')[0].trimEnd())) name = `_${name}`;
+  // Leave room for extensions and page suffixes on common local filesystems.
+  const encoder = new TextEncoder();
+  if (name.length > 120 || encoder.encode(name).length > 180) {
+    let short = '';
+    let bytes = 0;
+    for (const char of name) {
+      const size = encoder.encode(char).length;
+      if (short.length + char.length + 1 > 120 || bytes + size + 3 > 180) break;
+      short += char; bytes += size;
+    }
+    name = `${short.replace(/[. ]+$/g, '')}…`;
+  }
+  return name;
+}
+
+function safeFileBase(value) {
+  return typeof value === 'string' && value.length > 0 && titleFileBase(value) === value;
+}
+
+export function contentFileNames(fileBase, pageCount) {
+  return {
+    originalFile: fileBase == null ? 'original.txt' : `${fileBase}.txt`,
+    renderedFile: fileBase == null ? 'rendered.html' : `${fileBase}.html`,
+    pageFiles: Array.from({ length: pageCount }, (_, index) => fileBase == null
+      ? `pages/page-${index + 1}.html`
+      : `pages/${fileBase}${index ? ` - 页面${index + 1}` : ''}.html`),
+  };
 }
 
 export function newId() {
@@ -45,7 +80,7 @@ export function validateMeta(value) {
 }
 
 export function validateEntry(value, directoryId) {
-  assert([SCHEMA_VERSION, 2].includes(value?.schemaVersion) && safeId(value.id) && value.id === directoryId,
+  assert([SCHEMA_VERSION, 2, 3].includes(value?.schemaVersion) && safeId(value.id) && value.id === directoryId,
     '收藏记录的编号或格式无效。');
   assert(typeof value.title === 'string' && value.title.length <= 160 && safeId(value.categoryId),
     '收藏的标题或分类无效。');
@@ -62,14 +97,25 @@ export function validateEntry(value, directoryId) {
   }
   assert(typeof value.savedAt === 'string' && Number.isFinite(Date.parse(value.savedAt)), '收藏时间无效。');
   assert(typeof value.updatedAt === 'string' && Number.isFinite(Date.parse(value.updatedAt)), '收藏修改时间无效。');
-  assert(value.content?.originalFile === 'original.txt' && value.content?.renderedFile === 'rendered.html' &&
-    /^[a-f0-9]{64}$/.test(value.content.originalSha256) && Array.isArray(value.content.pages), '收藏内容索引无效。');
-  assert(value.schemaVersion === 2 ? safeId(value.content.storageId) : value.content.storageId == null,
+  assert(value.content && /^[a-f0-9]{64}$/.test(value.content.originalSha256) &&
+    Array.isArray(value.content.pages) && value.content.pages.length <= 100, '收藏内容索引无效。');
+  assert(value.schemaVersion === 3
+    ? safeFileBase(value.content.fileBase) && value.content.fileBase === titleFileBase(value.title)
+    : value.content.fileBase == null, '收藏文件名无效。');
+  const names = contentFileNames(value.content.fileBase, value.content.pages.length);
+  assert(value.content.originalFile === names.originalFile && value.content.renderedFile === names.renderedFile,
+    '收藏内容文件路径无效。');
+  assert(value.schemaVersion === 1 ? value.content.storageId == null
+    : value.schemaVersion === 2 ? safeId(value.content.storageId)
+    : value.content.storageId == null || safeId(value.content.storageId),
     '收藏内容目录无效。');
-  if (value.cleanup != null) assert(value.schemaVersion === 2 && Number.isSafeInteger(value.cleanup.legacyPageCount) &&
-    value.cleanup.legacyPageCount >= -1 && value.cleanup.legacyPageCount <= 100, '收藏清理记录无效。');
-  assert(value.content.pages.length <= 100 && value.content.pages.every((p, index) =>
-    p && p.file === `pages/page-${index + 1}.html` && typeof p.label === 'string'), '收藏页面路径无效。');
+  if (value.cleanup != null) assert(value.schemaVersion >= 2 && safeId(value.content.storageId) &&
+    Number.isSafeInteger(value.cleanup.legacyPageCount) && value.cleanup.legacyPageCount >= -1 &&
+    value.cleanup.legacyPageCount <= 100 && (value.cleanup.legacyFileBase == null ||
+      (value.schemaVersion === 3 && value.cleanup.legacyPageCount >= 0 && safeFileBase(value.cleanup.legacyFileBase))),
+  '收藏清理记录无效。');
+  assert(value.content.pages.every((p, index) =>
+    p && p.file === names.pageFiles[index] && typeof p.label === 'string'), '收藏页面路径无效。');
   assert(Array.isArray(value.content.warnings) && value.content.warnings.every(note => typeof note === 'string'), '收藏页面说明记录无效。');
   return value;
 }
