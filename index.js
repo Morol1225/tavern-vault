@@ -1,6 +1,6 @@
-/* 储藏库 v0.5.0 | SillyTavern 原生扩展 | 无远程代码依赖 */
+/* 储藏库 v0.6.0 | SillyTavern 原生扩展 | 无远程代码依赖 */
 // src/core.js
-const VERSION = '0.5.0';
+const VERSION = '0.6.0';
 const PRODUCT = 'tavern-vault';
 const SCHEMA_VERSION = 1;
 const UNFILED = 'uncategorized';
@@ -43,6 +43,17 @@ function safeFileBase(value) {
   return typeof value === 'string' && value.length > 0 && titleFileBase(value) === value;
 }
 
+function safeFolderName(value) {
+  if (safeFileBase(value)) return true;
+  if (typeof value !== 'string' || value.length > 150) return false;
+  const suffix = value.match(/^(.*) \(([2-9]|[1-9]\d{1,4})\)$/u);
+  return Boolean(suffix && safeFileBase(suffix[1]));
+}
+
+function textFilePath(entry) {
+  return `${entry.content.folder ? `${entry.content.folder}/` : ''}${entry.content.originalFile}`;
+}
+
 function contentFileNames(fileBase, pageCount) {
   return {
     originalFile: fileBase == null ? 'original.txt' : `${fileBase}.txt`,
@@ -75,22 +86,27 @@ async function digest(text) {
 }
 
 function validateMeta(value) {
-  assert(value?.product === PRODUCT && [1, 2].includes(value.schemaVersion),
+  assert(value?.product === PRODUCT && [1, 2, 3].includes(value.schemaVersion),
     '这个文件夹不是受支持的储藏库，或文件格式版本不同。请另选文件夹。');
   assert(safeId(value.libraryId) && Number.isSafeInteger(value.revision) && value.revision >= 0,
     '收藏库配置损坏，已停止写入；原文件保持不变。');
   assert(Array.isArray(value.categories), '收藏库分类记录损坏，已停止写入。');
   const ids = new Set();
   const names = new Set();
+  const folders = new Set();
   for (const category of value.categories) {
     assert(category && safeId(category.id) && typeof category.name === 'string' &&
       category.name.trim().length > 0 && category.name.length <= 80 &&
       !ids.has(category.id) && !names.has(normalized(category.name)), '收藏库中存在损坏或重复的分类。');
     ids.add(category.id);
     names.add(normalized(category.name));
+    if (category.folder != null) {
+      assert(safeFolderName(category.folder) && !folders.has(normalized(category.folder)), '分类文件夹无效或重名，已停止写入。');
+      folders.add(normalized(category.folder));
+    }
   }
   assert(ids.has(UNFILED), '收藏库缺少“未分类”记录，已停止写入。');
-  if (value.schemaVersion === 2) {
+  if (value.schemaVersion >= 2) {
     assert(Array.isArray(value.entries) && Array.isArray(value.deleted), '收藏库的文件清单损坏，已停止写入。');
     const entryIds = new Set();
     const files = new Set();
@@ -100,21 +116,23 @@ function validateMeta(value) {
       entryIds.add(record.id);
     }
     for (const record of value.entries) {
-      assert(record.schemaVersion === 4 && !files.has(normalized(record.content.originalFile)), '收藏库中存在重复或无效的 TXT 文件名。');
-      files.add(normalized(record.content.originalFile));
+      assert((record.schemaVersion === 4 || value.schemaVersion === 3 && record.schemaVersion === 5) &&
+        !files.has(normalized(textFilePath(record))), '收藏库中存在重复或无效的 TXT 文件名。');
+      if (record.schemaVersion === 5) assert(value.categories.some(category => category.id === record.categoryId && category.folder === record.content.folder), '收藏与分类文件夹不一致。');
+      files.add(normalized(textFilePath(record)));
     }
   }
   return value;
 }
 
 function validateEntry(value, directoryId) {
-  assert([1, 2, 3, 4].includes(value?.schemaVersion) && safeId(value.id) && value.id === directoryId,
+  assert([1, 2, 3, 4, 5].includes(value?.schemaVersion) && safeId(value.id) && value.id === directoryId,
     '收藏记录的编号或格式无效。');
   assert(typeof value.title === 'string' && value.title.length <= 160 && safeId(value.categoryId),
     '收藏的标题或分类无效。');
   assert(value.source && typeof value.source.chatId === 'string' &&
     Number.isSafeInteger(value.source.messageId) && value.source.messageId >= 0 &&
-    (value.schemaVersion === 4 ? typeof value.source.characterName === 'string' :
+    (value.schemaVersion >= 4 ? typeof value.source.characterName === 'string' :
       Number.isSafeInteger(value.source.swipeId) && value.source.swipeId >= 0 && typeof value.source.speakerName === 'string'), '收藏来源记录不完整。');
   if (value.source.selection != null) {
     const selection = value.source.selection;
@@ -128,11 +146,13 @@ function validateEntry(value, directoryId) {
   assert(value.content && /^[a-f0-9]{64}$/.test(value.content.originalSha256) &&
     Array.isArray(value.content.pages) && value.content.pages.length <= 100, '收藏内容索引无效。');
   assert(Array.isArray(value.content.warnings) && value.content.warnings.every(note => typeof note === 'string'), '收藏页面说明记录无效。');
-  if (value.schemaVersion === 4) {
+  if (value.schemaVersion >= 4) {
     assert(safeTextFile(value.content.originalFile) && value.content.storageId == null && value.content.renderedFile == null &&
       value.content.pages.every(page => page && typeof page.label === 'string' && page.file == null), '收藏的 TXT 文件索引无效。');
+    assert(value.schemaVersion === 5 ? safeFolderName(value.content.folder) : value.content.folder == null, '收藏的分类文件夹无效。');
     if (value.cleanup != null) {
-      assert(Array.isArray(value.cleanup.files) && value.cleanup.files.every(file => safeTextFile(file.name) && /^[a-f0-9]{64}$/.test(file.sha256)), '收藏清理记录无效。');
+      assert(Array.isArray(value.cleanup.files) && value.cleanup.files.every(file => safeTextFile(file.name) &&
+        (file.folder == null || value.schemaVersion === 5 && safeFolderName(file.folder)) && /^[a-f0-9]{64}$/.test(file.sha256)), '收藏清理记录无效。');
       if (value.cleanup.legacy != null) {
         assert([1, 2, 3].includes(value.cleanup.legacy.schemaVersion) && value.cleanup.legacy.id === value.id, '旧收藏清理编号无效。');
         validateEntry(value.cleanup.legacy, value.id);
@@ -242,10 +262,10 @@ function plainPreview(original) {
 class VaultStorage {
   constructor(environment = globalThis) {
     this.environment = environment; this.directory = null; this.meta = null;
-    this.entries = []; this.issues = []; this.fileNames = []; this.queue = Promise.resolve();
+    this.entries = []; this.issues = []; this.fileNames = []; this.rootNames = []; this.queue = Promise.resolve();
   }
   get connected() { return Boolean(this.directory && this.meta); }
-  get legacyCount() { return this.entries.filter(entry => entry.schemaVersion !== 4).length; }
+  get legacyCount() { return this.entries.filter(entry => entry.schemaVersion !== 5).length; }
   get pendingDeleteCount() { return this.meta?.deleted?.length || 0; }
   async permission(request = false) {
     if (!this.directory) return false;
@@ -254,7 +274,7 @@ class VaultStorage {
   }
   async attach(directory, initialize = true) {
     assert(directory?.kind === 'directory', '请选择一个文件夹。');
-    const prior = { directory: this.directory, meta: this.meta, entries: this.entries, issues: this.issues, fileNames: this.fileNames };
+    const prior = { directory: this.directory, meta: this.meta, entries: this.entries, issues: this.issues, fileNames: this.fileNames, rootNames: this.rootNames };
     try {
       assert(await directory.queryPermission({ mode: 'readwrite' }) === 'granted', '尚未获得文件夹的读写权限，请重新授权。');
       let raw = await optionalFile(directory, META_FILE);
@@ -263,10 +283,11 @@ class VaultStorage {
         let collision = false;
         try { await directory.getDirectoryHandle('items'); collision = true; } catch (error) { if (error.name !== 'NotFoundError') throw error; }
         assert(!collision, '此文件夹已存在 items 目录，无法确认归属。请选择一个空文件夹以保留已有文件。');
-        const meta = { product: PRODUCT, schemaVersion: 2, libraryId: newId(), revision: 0, createdAt: new Date().toISOString(),
-          categories: [{ id: UNFILED, name: '未分类' }], entries: [], deleted: [] };
+        const meta = { product: PRODUCT, schemaVersion: 3, libraryId: newId(), revision: 0, createdAt: new Date().toISOString(),
+          categories: [{ id: UNFILED, name: '未分类', folder: '未分类' }], entries: [], deleted: [] };
         raw = JSON.stringify(meta, null, 2);
-        await directory.getDirectoryHandle('items', { create: true }); await writeFile(directory, META_FILE, raw);
+        await (await directory.getDirectoryHandle('items', { create: true })).getDirectoryHandle('未分类', { create: true });
+        await writeFile(directory, META_FILE, raw);
       }
       this.meta = validateMeta(JSON.parse(raw)); this.directory = directory; await this.load();
     } catch (error) { Object.assign(this, prior); throw error; }
@@ -274,11 +295,11 @@ class VaultStorage {
   async readRecord(record) {
     validateEntry(record, record.id);
     const items = await this.directory.getDirectoryHandle('items');
-    const directory = record.schemaVersion === 4 ? items : await legacyContent(await items.getDirectoryHandle(record.id), record);
+    const directory = record.schemaVersion >= 4 ? await this.textDirectory(record) : await legacyContent(await items.getDirectoryHandle(record.id), record);
     const original = await readFile(directory, record.content.originalFile);
     const sha256 = await digest(original);
-    if (record.schemaVersion !== 4) assert(sha256 === record.content.originalSha256, '原文已变动，校验不一致');
-    return record.schemaVersion === 4 ? { ...record, original, content: { ...record.content, originalSha256: sha256, pages: pageIndex(original) } }
+    if (record.schemaVersion < 4) assert(sha256 === record.content.originalSha256, '原文已变动，校验不一致');
+    return record.schemaVersion >= 4 ? { ...record, original, content: { ...record.content, originalSha256: sha256, pages: pageIndex(original) } }
       : { ...record, original };
   }
   async load() {
@@ -287,15 +308,15 @@ class VaultStorage {
     const items = await this.directory.getDirectoryHandle('items');
     const records = [...(meta.entries || [])];
     const ignored = new Set([...records.map(entry => entry.id), ...(meta.deleted || []).map(item => item.entry.id)]);
-    const issues = []; const names = [];
+    const issues = [];
+    const categoryFolders = new Set(meta.categories.filter(category => category.folder).map(category => normalized(category.folder)));
     for await (const handle of items.values()) {
-      names.push(handle.name);
-      if (handle.kind !== 'directory' || !safeId(handle.name) || ignored.has(handle.name)) continue;
+      if (handle.kind !== 'directory' || !safeId(handle.name) || ignored.has(handle.name) || categoryFolders.has(normalized(handle.name))) continue;
       try {
         const raw = await optionalFile(handle, 'entry.json');
         if (raw === null) continue;
         const entry = validateEntry(JSON.parse(raw), handle.name);
-        assert(entry.schemaVersion !== 4, 'TXT 收藏应登记在收藏库配置中。'); records.push(entry);
+        assert(entry.schemaVersion < 4, 'TXT 收藏应登记在收藏库配置中。'); records.push(entry);
       } catch (error) { if (['NotAllowedError', 'SecurityError'].includes(error.name)) throw error; issues.push({ id: handle.name, message: error.message }); }
     }
     const entries = [];
@@ -303,7 +324,7 @@ class VaultStorage {
       try { entries.push(await this.readRecord(record)); }
       catch (error) { if (['NotAllowedError', 'SecurityError'].includes(error.name)) throw error; issues.push({ id: record.id, message: error.message }); }
     }
-    this.meta = meta; this.entries = entries.sort((a, b) => b.savedAt.localeCompare(a.savedAt)); this.issues = issues; this.fileNames = names;
+    this.meta = meta; this.entries = entries.sort((a, b) => b.savedAt.localeCompare(a.savedAt)); this.issues = issues; await this.refreshNames();
     return this.entries;
   }
   mutate(action) {
@@ -316,32 +337,59 @@ class VaultStorage {
     const result = this.queue.then(run, run); this.queue = result.catch(() => {}); return result;
   }
   async writeIndex(changes) {
-    const next = { ...this.meta, schemaVersion: 2, entries: this.meta.entries || [], deleted: this.meta.deleted || [], ...changes, revision: this.meta.revision + 1 };
+    const next = { ...this.meta, schemaVersion: 3, entries: this.meta.entries || [], deleted: this.meta.deleted || [], ...changes, revision: this.meta.revision + 1 };
     validateMeta(next);
     const raw = JSON.stringify(next, null, 2);
     try { await writeFile(this.directory, META_FILE, raw); }
     catch (error) { if (await optionalFile(this.directory, META_FILE).catch(() => null) !== raw) throw error; }
     this.meta = next; return next;
   }
+  categoryFolder(categoryId = UNFILED, newCategory = '') {
+    const name = newCategory.trim();
+    const category = name ? this.meta?.categories.find(value => normalized(value.name) === normalized(name)) || { name }
+      : this.meta?.categories.find(value => value.id === categoryId) || { name: '未分类' };
+    if (category.folder) return category.folder;
+    const base = titleFileBase(category.name);
+    const occupied = new Set([...this.rootNames, ...(this.meta?.categories || []).map(value => value.folder).filter(Boolean)].map(normalized));
+    let folder = base; let index = 2;
+    while (occupied.has(normalized(folder))) { assert(index < 100000, '同名分类目录过多，请换个分类名称。'); folder = `${base} (${index++})`; }
+    return folder;
+  }
   async ensureCategory({ categoryId = UNFILED, newCategory = '' } = {}) {
-    if (!newCategory.trim()) { assert(this.meta.categories.some(c => c.id === categoryId), '所选分类已经不存在，请重新选择。'); return categoryId; }
     const name = newCategory.trim(); assert(name.length <= 80, '分类名称最多 80 个字符。');
-    const existing = this.meta.categories.find(c => normalized(c.name) === normalized(name)); if (existing) return existing.id;
-    const category = { id: newId(), name }; await this.writeIndex({ categories: [...this.meta.categories, category] }); return category.id;
+    let category = name ? this.meta.categories.find(value => normalized(value.name) === normalized(name))
+      : this.meta.categories.find(value => value.id === categoryId);
+    assert(category || name, '所选分类已经不存在，请重新选择。');
+    if (!category?.folder) {
+      const folder = this.categoryFolder(category?.id || categoryId, name);
+      category = { ...(category || { id: newId(), name }), folder };
+      await this.writeIndex({ categories: [...this.meta.categories.filter(value => value.id !== category.id), category] });
+    }
+    await (await this.directory.getDirectoryHandle('items')).getDirectoryHandle(category.folder, { create: true });
+    await this.refreshNames(); return category.id;
   }
   addCategory(name) { return this.mutate(() => this.ensureCategory({ newCategory: name })); }
-  previewFileName(title, entryId) {
-    const currentEntry = this.entries.find(entry => entry.id === entryId && entry.schemaVersion === 4);
-    const current = currentEntry?.content.originalFile;
-    if (currentEntry && title === currentEntry.title) return current;
+  previewFileName(title, entryId, targetFolder) {
+    const currentEntry = this.entries.find(entry => entry.id === entryId && entry.schemaVersion === 5);
+    const folder = targetFolder ?? currentEntry?.content.folder ?? this.categoryFolder();
+    const current = currentEntry?.content.folder === folder ? currentEntry.content.originalFile : null;
+    if (current && title === currentEntry.title) return current;
     const base = titleFileBase(title); const name = `${base}.txt`;
     if (current && normalized(current) === normalized(name)) return current;
     const reserved = [...(this.meta?.entries || []), ...(this.meta?.deleted || []).map(item => item.entry)]
-      .filter(entry => entry.schemaVersion === 4).flatMap(entry => [entry.content.originalFile, ...(entry.cleanup?.files || []).map(file => file.name)]);
+      .filter(entry => entry.schemaVersion >= 4).flatMap(entry => [textFilePath(entry), ...(entry.cleanup?.files || []).map(file => `${file.folder ? `${file.folder}/` : ''}${file.name}`)]);
     const occupied = new Set([...this.fileNames, ...reserved].map(normalized));
     let index = 2; let candidate = name;
-    while (occupied.has(normalized(candidate))) { assert(index < 100000, '同名文件过多，请换个标题。'); candidate = `${base} (${index++}).txt`; }
+    while (occupied.has(normalized(`${folder}/${candidate}`))) { assert(index < 100000, '同名文件过多，请换个标题。'); candidate = `${base} (${index++}).txt`; }
     return candidate;
+  }
+  previewPath(title, { entryId, categoryId = UNFILED, newCategory = '' } = {}) {
+    const folder = this.categoryFolder(categoryId, newCategory);
+    return `${folder}/${this.previewFileName(title, entryId, folder)}`;
+  }
+  async textDirectory(record, create = false) {
+    const items = await this.directory.getDirectoryHandle('items');
+    return record.content.folder ? items.getDirectoryHandle(record.content.folder, { create }) : items;
   }
   async getRecord(id) {
     assert(safeId(id), '收藏编号无效。');
@@ -355,21 +403,21 @@ class VaultStorage {
     if (options.expectedLibraryId != null) assert(options.expectedLibraryId === this.meta.libraryId, '操作期间更换了收藏库，尚未保存。请连接原收藏文件夹后重试。');
     if (options.expectedToken != null) assert(options.expectedToken === editToken(entry), '这条收藏已在别处修改，请取消并重新读取；当前草稿尚未保存。');
   }
-  async makeFlat(entry, original, title, filename, categoryId = entry.categoryId) {
+  async makeTextEntry(entry, original, title, filename, categoryId = entry.categoryId) {
     const now = new Date().toISOString();
-    const record = { ...recordOnly(entry), schemaVersion: 4, title, categoryId, updatedAt: now,
-      source: compactSource(entry.source), content: { originalFile: filename, originalSha256: await digest(original), pages: pageIndex(original), warnings: [] } };
-    const cleanup = entry.schemaVersion === 4 ? entry.cleanup && { ...entry.cleanup, files: [...entry.cleanup.files] }
+    const record = { ...recordOnly(entry), schemaVersion: 5, title, categoryId, updatedAt: now,
+      source: compactSource(entry.source), content: { folder: this.categoryFolder(categoryId), originalFile: filename, originalSha256: await digest(original), pages: pageIndex(original), warnings: [] } };
+    const cleanup = entry.schemaVersion >= 4 ? entry.cleanup && { ...entry.cleanup, files: [...entry.cleanup.files] }
       : { files: [], legacy: recordOnly(entry) };
-    if (entry.schemaVersion === 4 && filename !== entry.content.originalFile) {
+    if (entry.schemaVersion >= 4 && textFilePath(record) !== textFilePath(entry)) {
       record.cleanup = cleanup || { files: [] };
-      record.cleanup.files.push({ name: entry.content.originalFile, sha256: entry.content.originalSha256 });
+      record.cleanup.files.push({ name: entry.content.originalFile, ...(entry.content.folder ? { folder: entry.content.folder } : {}), sha256: entry.content.originalSha256 });
     } else if (cleanup) record.cleanup = cleanup;
     else delete record.cleanup;
     validateEntry(record, record.id); return record;
   }
   async writeRecord(record, original, newFile, writeBody = true) {
-    const items = await this.directory.getDirectoryHandle('items');
+    const items = await this.textDirectory(record, true);
     try {
       if (writeBody) await writeFile(items, record.content.originalFile, original);
       const entries = [...(this.meta.entries || []).filter(entry => entry.id !== record.id), record];
@@ -379,7 +427,7 @@ class VaultStorage {
         // Remove only the new file created for this attempt, never an existing user file.
         const disk = await optionalFile(this.directory, META_FILE).catch(() => null);
         let committed = false;
-        try { committed = JSON.parse(disk)?.entries?.some(entry => entry.id === record.id && entry.content.originalFile === record.content.originalFile); } catch { /* Unknown result: keep the file. */ }
+        try { committed = JSON.parse(disk)?.entries?.some(entry => entry.id === record.id && textFilePath(entry) === textFilePath(record)); } catch { /* Unknown result: keep the file. */ }
         if (disk && !committed) {
           const value = await optionalFile(items, record.content.originalFile).catch(() => null);
           if (value === '' || value === original) await removeIfPresent(items, record.content.originalFile).catch(() => {});
@@ -397,8 +445,16 @@ class VaultStorage {
     await this.refreshNames(); return { entry, cleanupPending };
   }
   async refreshNames() {
-    this.fileNames = [];
-    for await (const handle of (await this.directory.getDirectoryHandle('items')).values()) this.fileNames.push(handle.name);
+    this.fileNames = []; this.rootNames = [];
+    const records = [...(this.meta?.entries || []), ...(this.meta?.deleted || []).map(value => value.entry)];
+    const folders = new Set([...(this.meta?.categories || []).map(category => category.folder),
+      ...records.flatMap(record => [record.content.folder, ...(record.cleanup?.files || []).map(file => file.folder)])].filter(Boolean).map(normalized));
+    for await (const handle of (await this.directory.getDirectoryHandle('items')).values()) {
+      this.rootNames.push(handle.name); this.fileNames.push(handle.name);
+      if (handle.kind === 'directory' && folders.has(normalized(handle.name))) {
+        for await (const child of handle.values()) this.fileNames.push(`${handle.name}/${child.name}`);
+      }
+    }
   }
   save(draft, options) {
     return this.mutate(async () => {
@@ -409,8 +465,8 @@ class VaultStorage {
       if (duplicate) return { entry: duplicate, duplicate: true };
       const title = String(options.title || '').trim(); assert(title && title.length <= 160, '请填写标题，最多 160 个字符。');
       const categoryId = await this.ensureCategory(options); const now = new Date().toISOString();
-      const record = { schemaVersion: 4, id: newId(), title, categoryId, savedAt: now, updatedAt: now, source,
-        content: { originalFile: this.previewFileName(title), originalSha256: hash, pages: pageIndex(draft.original), warnings: [] } };
+      const record = { schemaVersion: 5, id: newId(), title, categoryId, savedAt: now, updatedAt: now, source,
+        content: { folder: this.categoryFolder(categoryId), originalFile: this.previewFileName(title, null, this.categoryFolder(categoryId)), originalSha256: hash, pages: pageIndex(draft.original), warnings: [] } };
       validateEntry(record, record.id);
       return { ...await this.writeRecord(record, draft.original, true), duplicate: false };
     });
@@ -420,16 +476,11 @@ class VaultStorage {
       const entry = await this.getRecord(id); this.checkExpected(entry, options);
       const title = String(options.title || '').trim(); assert(title && title.length <= 160, '请填写标题，最多 160 个字符。');
       const categoryId = await this.ensureCategory(options); await this.refreshNames();
-      if (title === entry.title && entry.schemaVersion !== 4) {
-        const item = await (await this.directory.getDirectoryHandle('items')).getDirectoryHandle(id);
-        const next = { ...recordOnly(entry), categoryId, updatedAt: new Date().toISOString() };
-        await writeFile(item, 'entry.json', JSON.stringify(next, null, 2));
-        Object.assign(this.entries.find(item => item.id === id) || {}, next); return next;
-      }
-      const filename = title === entry.title && entry.schemaVersion === 4 ? entry.content.originalFile : this.previewFileName(title, id);
-      const next = await this.makeFlat(entry, entry.original, title, filename, categoryId);
-      return (await this.writeRecord(next, entry.original, entry.schemaVersion !== 4 || filename !== entry.content.originalFile,
-        entry.schemaVersion !== 4 || filename !== entry.content.originalFile)).entry;
+      const folder = this.categoryFolder(categoryId);
+      const filename = this.previewFileName(title, id, folder);
+      const next = await this.makeTextEntry(entry, entry.original, title, filename, categoryId);
+      const moving = entry.schemaVersion !== 5 || textFilePath(next) !== textFilePath(entry);
+      return (await this.writeRecord(next, entry.original, moving, moving)).entry;
     });
   }
   async updateContent(id, original, options = {}) {
@@ -440,10 +491,12 @@ class VaultStorage {
       const entry = await this.getRecord(id); this.checkExpected(entry, options);
       const indexed = this.meta.entries?.find(item => item.id === id);
       if (original === entry.original && (!indexed || indexed.content.originalSha256 === entry.content.originalSha256)) return { entry, unchanged: true, cleanupPending: Boolean(entry.cleanup) };
-      await this.refreshNames();
-      const filename = entry.schemaVersion === 4 ? entry.content.originalFile : this.previewFileName(entry.title);
-      const next = await this.makeFlat(entry, original, entry.title, filename); next.editedAt = new Date().toISOString();
-      return { ...await this.writeRecord(next, original, entry.schemaVersion !== 4, original !== entry.original || entry.schemaVersion !== 4), unchanged: false };
+      await this.ensureCategory({ categoryId: entry.categoryId });
+      const folder = this.categoryFolder(entry.categoryId);
+      const filename = this.previewFileName(entry.title, id, folder);
+      const next = await this.makeTextEntry(entry, original, entry.title, filename); next.editedAt = new Date().toISOString();
+      const moving = entry.schemaVersion !== 5 || textFilePath(next) !== textFilePath(entry);
+      return { ...await this.writeRecord(next, original, moving, original !== entry.original || moving), unchanged: false };
     });
   }
   async removeLegacy(record) {
@@ -486,27 +539,30 @@ class VaultStorage {
     for await (const handle of item.values()) assert(handle.name === 'entry.json', '旧目录内有额外文件，已保留；请自行检查后重试清理。');
     await removeIfPresent(item, 'entry.json'); await items.removeEntry(record.id);
   }
-  async removeFlatFiles(entry, includeCurrent = false) {
+  async removeTextFiles(entry, includeCurrent = false) {
     const files = [...(entry.cleanup?.files || [])];
-    if (includeCurrent) files.push({ name: entry.content.originalFile, sha256: entry.content.originalSha256 });
-    const items = await this.directory.getDirectoryHandle('items');
+    if (includeCurrent) files.push({ name: entry.content.originalFile, ...(entry.content.folder ? { folder: entry.content.folder } : {}), sha256: entry.content.originalSha256 });
     for (const file of files) {
-      assert(!(this.meta.entries || []).some(other => normalized(other.content.originalFile) === normalized(file.name)), '文件仍被收藏引用，已停止清理。');
-      const original = await optionalFile(items, file.name);
-      if (original !== null) { assert(await digest(original) === file.sha256, '文件已被外部修改，已停止清理，请检查后重试。'); await items.removeEntry(file.name); }
+      const path = `${file.folder ? `${file.folder}/` : ''}${file.name}`;
+      assert(!(this.meta.entries || []).some(other => normalized(textFilePath(other)) === normalized(path)), '文件仍被收藏引用，已停止清理。');
+      let directory;
+      try { directory = await this.textDirectory({ content: { folder: file.folder } }); }
+      catch (error) { if (error.name === 'NotFoundError') continue; throw error; }
+      const original = await optionalFile(directory, file.name);
+      if (original !== null) { assert(await digest(original) === file.sha256, '文件已被外部修改，已停止清理，请检查后重试。'); await directory.removeEntry(file.name); }
     }
     if (entry.cleanup?.legacy) await this.removeLegacy(entry.cleanup.legacy);
   }
   async finishCleanup(record) {
     if (!record.cleanup) return record;
-    await this.removeFlatFiles(record);
+    await this.removeTextFiles(record);
     const clean = { ...record }; delete clean.cleanup;
     await this.writeIndex({ entries: this.meta.entries.map(entry => entry.id === record.id ? clean : entry) }); return clean;
   }
   cleanupContent(id) {
     return this.mutate(async () => {
       const entry = await this.getRecord(id);
-      assert(entry.schemaVersion === 4, '请先把旧收藏整理为 TXT。');
+      assert(entry.schemaVersion >= 4, '请先把旧收藏整理为分类 TXT。');
       const clean = await this.finishCleanup(recordOnly(entry));
       this.entries = this.entries.map(value => value.id === id ? { ...clean, original: entry.original } : value);
       await this.refreshNames(); return clean;
@@ -516,11 +572,12 @@ class VaultStorage {
     assert(options.confirmed === true, '尚未确认整理，文件未修改。');
     return this.mutate(async () => {
       assert(options.expectedLibraryId === this.meta.libraryId, '整理期间更换了收藏库，已停止。');
-      await this.load(); const ids = this.entries.filter(entry => entry.schemaVersion !== 4).map(entry => entry.id);
+      await this.load(); const ids = this.entries.filter(entry => entry.schemaVersion !== 5).map(entry => entry.id);
       let converted = 0; let cleanupPending = 0;
       for (const id of ids) {
-        const entry = await this.getRecord(id); await this.refreshNames();
-        const next = await this.makeFlat(entry, entry.original, entry.title, this.previewFileName(entry.title));
+        const entry = await this.getRecord(id); await this.ensureCategory({ categoryId: entry.categoryId });
+        const folder = this.categoryFolder(entry.categoryId);
+        const next = await this.makeTextEntry(entry, entry.original, entry.title, this.previewFileName(entry.title, id, folder));
         const result = await this.writeRecord(next, entry.original, true); converted++;
         if (result.cleanupPending) cleanupPending++;
       }
@@ -541,7 +598,7 @@ class VaultStorage {
   async finishDeletions() {
     for (const tombstone of [...(this.meta.deleted || [])]) {
       try {
-        if (tombstone.entry.schemaVersion === 4) await this.removeFlatFiles(tombstone.entry, true);
+        if (tombstone.entry.schemaVersion >= 4) await this.removeTextFiles(tombstone.entry, true);
         else await this.removeLegacy(tombstone.entry);
         await this.writeIndex({ deleted: this.meta.deleted.filter(item => item.entry.id !== tombstone.entry.id) });
       } catch { /* Keep the pending operation visible for an explicit retry. */ }
@@ -550,8 +607,8 @@ class VaultStorage {
   retryDeletions() { return this.mutate(async () => { await this.finishDeletions(); await this.refreshNames(); return this.pendingDeleteCount; }); }
   async readPage(entry, index = -1) {
     validateEntry(entry, entry.id);
-    if (entry.schemaVersion === 4) {
-      const original = await readFile(await this.directory.getDirectoryHandle('items'), entry.content.originalFile);
+    if (entry.schemaVersion >= 4) {
+      const original = await readFile(await this.textDirectory(entry), entry.content.originalFile);
       assert(await digest(original) === entry.content.originalSha256, 'TXT 内容已变化，请重新读取文件夹。');
       if (index === -1) return plainPreview(original);
       const pages = extractHtmlPages(original); assert(Number.isInteger(index) && index >= 0 && index < pages.length, '页面编号无效。'); return pages[index].html;
@@ -933,7 +990,7 @@ const SHELL = `
           <p class="folder-status">收藏会保存在你选择的电脑文件夹里。</p>
           <button data-action="connect" type="button" class="connect">选择收藏文件夹</button>
           <button data-action="choose" type="button" class="change-folder" hidden>换个文件夹</button>
-          <button data-action="migrate" type="button" class="connect" hidden>旧收藏整理为 TXT</button>
+          <button data-action="migrate" type="button" class="connect" hidden>按分类整理旧收藏</button>
           <button data-action="retry-deletions" type="button" class="connect" hidden>重试清理已删除文件</button>
         </div>
       </aside>
@@ -1051,6 +1108,8 @@ class VaultUI {
       this.text('.editor-state', this.$('.body-input').value === this.contentBaseline ? '内容尚未修改。' : '草稿尚未保存，确认后才会更新本地文件。');
     });
     this.$('.title-input').addEventListener('input', () => { this.titleEdited = true; this.updateFilenamePreview(); });
+    this.$('.category-select').addEventListener('change', () => this.updateFilenamePreview());
+    this.$('.new-category-input').addEventListener('input', () => this.updateFilenamePreview());
     for (const selector of ['.include-tag-input', '.exclude-tags-input']) this.$(selector).addEventListener('input', () => this.updateSelection());
     this.$('.sheet').addEventListener('submit', event => { event.preventDefault(); this.submitForm(); });
     this.$('.number-sheet').addEventListener('submit', event => {
@@ -1231,6 +1290,7 @@ class VaultUI {
       area.hidden = !area.hidden;
       this.$('.category-select').disabled = !area.hidden;
       if (!area.hidden) this.$('.new-category-input').focus();
+      this.updateFilenamePreview();
     }
     if (action === 'delete' && this.selected) {
       const entry = this.selected;
@@ -1244,10 +1304,10 @@ class VaultUI {
     }
     if (action === 'migrate') {
       const expectedLibraryId = this.storage.meta.libraryId;
-      if (!this.host.window.confirm(`将 ${this.storage.legacyCount} 条旧收藏整理为 items/标题.txt？\n会保留原文、分类和简要来源，确认后清理旧目录及 HTML 副本。页面改由 TXT 中的代码生成，单独显示副本不再保留。`)) return;
+      if (!this.host.window.confirm(`将 ${this.storage.legacyCount} 条旧收藏整理为 items/分类名/标题.txt？\n会保留原文、分类和简要来源，确认后清理原位置的 TXT、旧目录及 HTML 副本。页面改由 TXT 中的代码生成，单独显示副本不再保留。`)) return;
       this.withBusy(async () => {
         const result = await this.storage.migrate({ confirmed: true, expectedLibraryId }); this.readerKey = '';
-        this.notice(`已整理 ${result.converted} 条收藏为 TXT。${result.cleanupPending ? '部分旧文件尚未清理，请打开对应记录重试清理。' : '旧目录已清理。'}`, Boolean(result.cleanupPending));
+        this.notice(`已按分类整理 ${result.converted} 条收藏。${result.cleanupPending ? '部分旧文件尚未清理，请打开对应记录重试清理。' : '旧位置已清理。'}`, Boolean(result.cleanupPending));
       });
     }
     if (action === 'retry-deletions') this.withBusy(async () => {
@@ -1374,6 +1434,7 @@ class VaultUI {
     }
     if (mode === 'new') this.updateSelection();
     this.populateCategorySelect(['edit', 'content'].includes(mode) ? draft.categoryId : this.category);
+    this.updateFilenamePreview();
     this.renderConnection();
     this.updateDisabled();
     if (mode === 'content') this.$('.body-input').focus();
@@ -1426,9 +1487,10 @@ class VaultUI {
   updateFilenamePreview() {
     this.$('.file-hint').hidden = !['new', 'edit'].includes(this.mode);
     const title = this.$('.title-input').value.trim();
-    const file = this.mode === 'edit' && title === this.draft.title && this.draft.schemaVersion !== 4
-      ? this.draft.content.originalFile : this.storage.previewFileName(title, this.mode === 'edit' ? this.draft.id : null);
-    this.text('.file-hint', `本地原文：${this.mode === 'edit' && title === this.draft.title && this.draft.schemaVersion !== 4 ? '' : 'items/'}${file}`);
+    const path = this.storage.previewPath(title, { entryId: this.mode === 'edit' ? this.draft.id : null,
+      categoryId: this.$('.category-select').value,
+      newCategory: this.$('.new-category-field').hidden ? '' : this.$('.new-category-input').value });
+    this.text('.file-hint', `本地原文：items/${path}`);
   }
 
   async submitForm() {
@@ -1465,7 +1527,7 @@ class VaultUI {
           expectedToken: this.expectedEditToken, expectedLibraryId: this.editLibraryId });
         this.category = '*';
         this.notice(result.cleanup ? '整理已保存，但旧文件尚未清理完；请在阅读区重试清理。'
-          : result.schemaVersion === 4 ? '整理已保存，文件名与标题同步。' : '整理已保存。', Boolean(result.cleanup));
+          : result.schemaVersion === 5 ? '整理已保存，分类文件夹和文件名已同步。' : '整理已保存。', Boolean(result.cleanup));
       } else {
         const result = await this.storage.save(this.filteredDraft, options);
         this.selectedId = result.entry.id;
@@ -1610,7 +1672,7 @@ class VaultUI {
     entry.content.pages.forEach((page, index) => {
       const option = this.host.document.createElement('option'); option.value = String(index); option.textContent = page.label; select.append(option);
     });
-    const snapshot = this.host.document.createElement('option'); snapshot.value = '-1'; snapshot.textContent = entry.schemaVersion === 4 ? '文字预览' : '楼层显示快照'; select.append(snapshot);
+    const snapshot = this.host.document.createElement('option'); snapshot.value = '-1'; snapshot.textContent = entry.schemaVersion >= 4 ? '文字预览' : '楼层显示快照'; select.append(snapshot);
     if (!entry.content.pages[this.pageIndex]) this.pageIndex = -1;
     select.value = String(this.pageIndex);
     const loading = this.host.document.createElement('p'); loading.className = 'loading'; loading.textContent = '正在读取页面…'; content.append(loading);

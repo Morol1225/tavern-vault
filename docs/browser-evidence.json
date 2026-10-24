@@ -1,27 +1,27 @@
 {
-  "date": "2026-10-23T10:54:37.269Z",
+  "date": "2026-10-24T05:35:18.700Z",
   "kind": "synthetic-browser",
-  "productVersion": "0.5.0",
+  "productVersion": "0.6.0",
   "browser": "151.0.7922.34",
   "realSillyTavern": false,
   "fileSystem": "in-memory FileSystemDirectoryHandle adapter",
   "build": {
-    "version": "0.5.0",
+    "version": "0.6.0",
     "deliveryMode": "extension",
     "kind": "sillytavern-ui-extension",
     "sources": {
-      "src/core.js": "b3f7c4028030345d20ba069d52351626b52926fdf34b0ac71066bf53feacff6b",
-      "src/storage.js": "41853bcbc8b324fc1fac2ac47ad49181c354cfedc381b4005d355482184d0f18",
+      "src/core.js": "b0ad22ca6866af997bc33386ff3a90535394dd9f3e053aa3acaab321ec848831",
+      "src/storage.js": "4e0d0b7191fc881930a78ee8d0f92aac0d9803f344dc1c1b5229054b54d8041d",
       "src/capture.js": "97287c03e57d29f76e4e2a4c2b007b6e0ff5411678339617b5e3cbbf9167aebc",
       "src/selection.js": "e088b909b5c6a91f66969cbc972ab1ac6599ffef352f1dec68129d13951a1299",
       "src/host.js": "f2d74dc1752968210fd83a548f1d0b2950621412757a30465271e9172db29e71",
-      "src/ui.js": "7267d22dddb65904750a5b7c73fb95d9f9cd1ae1754cf19d594a5cf9d917ae93",
+      "src/ui.js": "e6faa51cdd9d2543abeb10e1bdf8b67fad371e3a5762a02076ed48dc63288482",
       "src/entry.js": "14699ec46e49cd2bd34c7660156da1890226edab5c0b9d386127ed3395186801",
       "src/ui.css": "37c907f7a93c84c2baac3b42075aabc0745bd072a50410416828966113eccfd7"
     },
     "artifacts": {
-      "index.js": "3c68f1b9dc6c7eb8469a1bbf54d55174715c74a065b44ae6c3d4ee242cdf22ba",
-      "manifest.json": "dac92f3a3c0beaa7c97a96d2d2a7f264affe66be36af4b494cf2f35826c886cd"
+      "index.js": "5fa1b7495eaa270f31ca9abeb3c12b57b59a205b1363214f7f644900498f8d27",
+      "manifest.json": "4d17ee3cf642bba4b5a6fe636fe9bc1bbb40610ab1ae341d16128633c24bc28c"
     }
   },
   "results": [
@@ -42,7 +42,7 @@
       "result": "passed"
     },
     {
-      "name": "每条收藏只生成 items/标题.txt，不生成 HTML、JSON 或编号子目录",
+      "name": "每条收藏只生成 items/分类名/标题.txt，不生成 HTML、JSON 或编号子目录",
       "result": "passed"
     },
     {
@@ -102,11 +102,15 @@
       "result": "passed"
     },
     {
+      "name": "改分类实时显示分类路径，取消不搬动；确认后 TXT 移到目标分类，原文和简要来源保留",
+      "result": "passed"
+    },
+    {
       "name": "删除按钮可见，取消保留文件；确认删除移除收藏，文件清理失败可明确重试",
       "result": "passed"
     },
     {
-      "name": "旧库整理取消不改文件，确认后变为 items/标题.txt，清理旧目录并保留源码页面交互",
+      "name": "旧库整理取消不改文件，确认后变为 items/分类名/标题.txt，清理旧目录并保留源码页面交互",
       "result": "passed"
     },
     {
@@ -204,8 +208,10 @@
     }
   },
   "nativeFs": {
+    "categoryFolderRoundTrip": true,
+    "categoryMoveRoundTrip": true,
     "deleteRoundTrip": true,
-    "flatTextOnly": true,
+    "categoryTextOnly": true,
     "namedFilesRoundTrip": true,
     "titleRenameRoundTrip": true,
     "confirmedEditRoundTrip": true,
@@ -219,14 +225,14 @@
     "userChosenExternalFolder": false
   },
   "screenshots": {
-    "collector-desktop.png": "98090d5de04c2a06bc070f726f0f41dd0348a687cd55607934ae62c3305d0112",
+    "collector-desktop.png": "996ebb271c6909990843080cafcbd48acd5dc2fc6f749699c82bdda8ee16611d",
     "editor-320.png": "bbfa7dee15d5c45df9dd046e3f715ba4b88cfe93020b07ba685bd7db52451aae",
     "editor-desktop.png": "54abfae0ff37370258893a4d73cc575b3aa1b5b1d4632a65bf1eec18d2617a7b",
-    "library-320.png": "0dfa69bf50d6c3c87d53444042748b8a8fc83c011904459728bc98cd26eda708",
-    "library-390.png": "6cff7e7a88a6283e5cd7a69d657823910ba89db58a24ff328132387d02f835d4",
-    "library-desktop.png": "b3f40fb1af96c07d92813fcf4d0563ef8003b526fa96a1bb626292636afe84bf",
+    "library-320.png": "c51719cf9ab6c2707821378c83f69a58bcc86dc1b9f504fbceadc35b98910ffb",
+    "library-390.png": "e11673169ee6cd5536d6540337a088cd64329420819d1dc82ccec3baf273506b",
+    "library-desktop.png": "2be9b6e5dc59681a678ef277a09029cdecb938532d92ffca8ceb7d6fc2c2cf65",
     "library-expanded-320.png": "d7ef70e0bc9a99a8c30a5b981ba4c07cf0d56aceebabe9ab81b8376b148dc993",
-    "library-expanded.png": "fac5d538d4feb9de1ca0a2ce8fb93bb159aae1812e87f63fbbc067c132306ab9",
-    "settings-entry.png": "05963566b596069225a0feb541472f2c1663c07cdfce48cd71787c78586e491a"
+    "library-expanded.png": "109868a0d4e65de85bccf99b3f7406283beb389dcde17cadd5b16375d437b031",
+    "settings-entry.png": "5631ae261c883e9e4747c6dba6d7ddfc176a57d22a73aace7ff74b812af1a67b"
   }
 }

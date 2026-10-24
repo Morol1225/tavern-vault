@@ -40,7 +40,7 @@ const SHELL = `
           <p class="folder-status">收藏会保存在你选择的电脑文件夹里。</p>
           <button data-action="connect" type="button" class="connect">选择收藏文件夹</button>
           <button data-action="choose" type="button" class="change-folder" hidden>换个文件夹</button>
-          <button data-action="migrate" type="button" class="connect" hidden>旧收藏整理为 TXT</button>
+          <button data-action="migrate" type="button" class="connect" hidden>按分类整理旧收藏</button>
           <button data-action="retry-deletions" type="button" class="connect" hidden>重试清理已删除文件</button>
         </div>
       </aside>
@@ -158,6 +158,8 @@ export class VaultUI {
       this.text('.editor-state', this.$('.body-input').value === this.contentBaseline ? '内容尚未修改。' : '草稿尚未保存，确认后才会更新本地文件。');
     });
     this.$('.title-input').addEventListener('input', () => { this.titleEdited = true; this.updateFilenamePreview(); });
+    this.$('.category-select').addEventListener('change', () => this.updateFilenamePreview());
+    this.$('.new-category-input').addEventListener('input', () => this.updateFilenamePreview());
     for (const selector of ['.include-tag-input', '.exclude-tags-input']) this.$(selector).addEventListener('input', () => this.updateSelection());
     this.$('.sheet').addEventListener('submit', event => { event.preventDefault(); this.submitForm(); });
     this.$('.number-sheet').addEventListener('submit', event => {
@@ -338,6 +340,7 @@ export class VaultUI {
       area.hidden = !area.hidden;
       this.$('.category-select').disabled = !area.hidden;
       if (!area.hidden) this.$('.new-category-input').focus();
+      this.updateFilenamePreview();
     }
     if (action === 'delete' && this.selected) {
       const entry = this.selected;
@@ -351,10 +354,10 @@ export class VaultUI {
     }
     if (action === 'migrate') {
       const expectedLibraryId = this.storage.meta.libraryId;
-      if (!this.host.window.confirm(`将 ${this.storage.legacyCount} 条旧收藏整理为 items/标题.txt？\n会保留原文、分类和简要来源，确认后清理旧目录及 HTML 副本。页面改由 TXT 中的代码生成，单独显示副本不再保留。`)) return;
+      if (!this.host.window.confirm(`将 ${this.storage.legacyCount} 条旧收藏整理为 items/分类名/标题.txt？\n会保留原文、分类和简要来源，确认后清理原位置的 TXT、旧目录及 HTML 副本。页面改由 TXT 中的代码生成，单独显示副本不再保留。`)) return;
       this.withBusy(async () => {
         const result = await this.storage.migrate({ confirmed: true, expectedLibraryId }); this.readerKey = '';
-        this.notice(`已整理 ${result.converted} 条收藏为 TXT。${result.cleanupPending ? '部分旧文件尚未清理，请打开对应记录重试清理。' : '旧目录已清理。'}`, Boolean(result.cleanupPending));
+        this.notice(`已按分类整理 ${result.converted} 条收藏。${result.cleanupPending ? '部分旧文件尚未清理，请打开对应记录重试清理。' : '旧位置已清理。'}`, Boolean(result.cleanupPending));
       });
     }
     if (action === 'retry-deletions') this.withBusy(async () => {
@@ -481,6 +484,7 @@ export class VaultUI {
     }
     if (mode === 'new') this.updateSelection();
     this.populateCategorySelect(['edit', 'content'].includes(mode) ? draft.categoryId : this.category);
+    this.updateFilenamePreview();
     this.renderConnection();
     this.updateDisabled();
     if (mode === 'content') this.$('.body-input').focus();
@@ -533,9 +537,10 @@ export class VaultUI {
   updateFilenamePreview() {
     this.$('.file-hint').hidden = !['new', 'edit'].includes(this.mode);
     const title = this.$('.title-input').value.trim();
-    const file = this.mode === 'edit' && title === this.draft.title && this.draft.schemaVersion !== 4
-      ? this.draft.content.originalFile : this.storage.previewFileName(title, this.mode === 'edit' ? this.draft.id : null);
-    this.text('.file-hint', `本地原文：${this.mode === 'edit' && title === this.draft.title && this.draft.schemaVersion !== 4 ? '' : 'items/'}${file}`);
+    const path = this.storage.previewPath(title, { entryId: this.mode === 'edit' ? this.draft.id : null,
+      categoryId: this.$('.category-select').value,
+      newCategory: this.$('.new-category-field').hidden ? '' : this.$('.new-category-input').value });
+    this.text('.file-hint', `本地原文：items/${path}`);
   }
 
   async submitForm() {
@@ -572,7 +577,7 @@ export class VaultUI {
           expectedToken: this.expectedEditToken, expectedLibraryId: this.editLibraryId });
         this.category = '*';
         this.notice(result.cleanup ? '整理已保存，但旧文件尚未清理完；请在阅读区重试清理。'
-          : result.schemaVersion === 4 ? '整理已保存，文件名与标题同步。' : '整理已保存。', Boolean(result.cleanup));
+          : result.schemaVersion === 5 ? '整理已保存，分类文件夹和文件名已同步。' : '整理已保存。', Boolean(result.cleanup));
       } else {
         const result = await this.storage.save(this.filteredDraft, options);
         this.selectedId = result.entry.id;
@@ -717,7 +722,7 @@ export class VaultUI {
     entry.content.pages.forEach((page, index) => {
       const option = this.host.document.createElement('option'); option.value = String(index); option.textContent = page.label; select.append(option);
     });
-    const snapshot = this.host.document.createElement('option'); snapshot.value = '-1'; snapshot.textContent = entry.schemaVersion === 4 ? '文字预览' : '楼层显示快照'; select.append(snapshot);
+    const snapshot = this.host.document.createElement('option'); snapshot.value = '-1'; snapshot.textContent = entry.schemaVersion >= 4 ? '文字预览' : '楼层显示快照'; select.append(snapshot);
     if (!entry.content.pages[this.pageIndex]) this.pageIndex = -1;
     select.value = String(this.pageIndex);
     const loading = this.host.document.createElement('p'); loading.className = 'loading'; loading.textContent = '正在读取页面…'; content.append(loading);

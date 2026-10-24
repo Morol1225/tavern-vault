@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import { VaultStorage } from '../src/storage.js';
 import { captureFloor } from '../src/capture.js';
-import { extractHtmlPages, digest, META_FILE, UNFILED, editToken, validateEntry, validateMeta, titleFileBase, compactSource, contentFileNames } from '../src/core.js';
+import { extractHtmlPages, digest, META_FILE, UNFILED, editToken, validateEntry, validateMeta, titleFileBase, compactSource, contentFileNames, textFilePath } from '../src/core.js';
 import { MemoryDirectory } from './memory-fs.mjs';
 const source = () => ({ chatId: '雾港手记 - 重逢', chatName: '雾港手记 - 重逢', characterOrGroupId: 'char.png',
   characterOrGroupName: '旅人', messageId: 12, swipeId: 1, speakerName: '旅人', role: 'assistant', capturedAt: '2026-10-22T08:00:00.000Z', origin: 'http://localhost:8000' });
@@ -22,13 +22,13 @@ async function filesIn(directory, prefix = '') {
 }
 async function rootRecord(directory) { return JSON.parse((await directory.getFileHandle(META_FILE)).value); }
 
- test('一条收藏只在 items 内生成一个标题 TXT，分类与三个来源字段集中存入根配置', async () => {
+ test('一条收藏只在 items/分类名 内生成一个标题 TXT，分类与三个来源字段集中存入根配置', async () => {
   const { directory, storage } = await setup(); const input = draft();
   const { entry } = await storage.save(input, { ...options, newCategory: '剧情' });
-  assert.deepEqual(Object.keys(await filesIn(directory)).sort(), ['/items/重逢的片刻.txt', '/tavern-vault.json']);
-  assert.equal((await filesIn(directory))['/items/重逢的片刻.txt'], input.original);
+  assert.deepEqual(Object.keys(await filesIn(directory)).sort(), ['/items/剧情/重逢的片刻.txt', '/tavern-vault.json']);
+  assert.equal((await filesIn(directory))['/items/剧情/重逢的片刻.txt'], input.original);
   const meta = await rootRecord(directory);
-  assert.equal(meta.schemaVersion, 2); assert.equal(meta.entries[0].schemaVersion, 4);
+  assert.equal(meta.schemaVersion, 3); assert.equal(meta.entries[0].schemaVersion, 5);
   assert.deepEqual(meta.entries[0].source, { chatId: source().chatId, characterName: '旅人', messageId: 12 });
   assert.deepEqual(entry.source, compactSource(input.source));
   assert.equal(entry.savedAt, meta.entries[0].savedAt);
@@ -62,7 +62,7 @@ test('分类复用规范化重名，并发新增分类不会丢失', async () =>
 });
 
 test('同名及处理后相同名称使用编号 TXT，已有未知文件与大小写相似文件不被覆盖', async () => {
-  const { directory, storage } = await setup(); const items = await directory.getDirectoryHandle('items');
+  const { directory, storage } = await setup(); const items = await (await directory.getDirectoryHandle('items')).getDirectoryHandle('未分类');
   (await items.getFileHandle('重逢的片刻.txt', { create: true })).value = '用户自己的文件';
   const a = await storage.save(draft('a'), options); const b = await storage.save(draft('b'), options);
   assert.equal(a.entry.content.originalFile, '重逢的片刻 (2).txt'); assert.equal(b.entry.content.originalFile, '重逢的片刻 (3).txt');
@@ -84,7 +84,7 @@ test('权限撤回、未知库和损坏库均不会写入或覆盖', async () =>
 test('丢失文件和待删除记录仍保留文件名，避免新收藏误用尚未清理的引用', async () => {
   for (const pendingDelete of [false, true]) {
     const { directory, storage } = await setup(); const { entry } = await storage.save(draft('原记录'), options);
-    await (await directory.getDirectoryHandle('items')).removeEntry(entry.content.originalFile);
+    await (await (await directory.getDirectoryHandle('items')).getDirectoryHandle(entry.content.folder)).removeEntry(entry.content.originalFile);
     if (pendingDelete) {
       const meta = await rootRecord(directory); meta.entries = []; meta.deleted = [{ entry: { ...entry, original: undefined }, deletedAt: new Date().toISOString() }];
       (await directory.getFileHandle(META_FILE)).value = JSON.stringify(meta);
@@ -92,7 +92,7 @@ test('丢失文件和待删除记录仍保留文件名，避免新收藏误用�
     await storage.load();
     const next = await storage.save(draft('新记录'), options); assert.equal(next.entry.content.originalFile, '重逢的片刻 (2).txt');
     if (pendingDelete) assert.equal(await storage.retryDeletions(), 0);
-    assert.equal((await filesIn(directory))['/items/重逢的片刻 (2).txt'], '新记录');
+    assert.equal((await filesIn(directory))['/items/未分类/重逢的片刻 (2).txt'], '新记录');
   }
 });
 
@@ -124,7 +124,7 @@ test('确认修改在同一个标题 TXT 中替换内容，页面重新生成，
   const result = await storage.updateContent(entry.id, text, confirmation(storage, entry));
   assert.deepEqual(result.entry.source, entry.source); assert.equal(result.entry.savedAt, entry.savedAt); assert(result.entry.editedAt);
   assert.equal(result.entry.content.originalFile, entry.content.originalFile); assert.equal(result.cleanupPending, false);
-  const all = await filesIn(directory); assert.equal(Object.keys(all).length, 2); assert.equal(all['/items/重逢的片刻.txt'], text);
+  const all = await filesIn(directory); assert.equal(Object.keys(all).length, 2); assert.equal(all['/items/未分类/重逢的片刻.txt'], text);
   assert(!Object.values(all).some(value => value.includes('OLD_BODY_MARKER')));
   const reopened = new VaultStorage({}); await reopened.attach(directory, false); assert.match(await reopened.readPage(reopened.entries[0], 0), /新正文/);
 });
@@ -141,10 +141,10 @@ test('正文写入失败保留原文件，索引更新失败时明确说明已�
 
 test('整理新标题只改一个 TXT 的名称，保留正文、角色来源和收藏时间，重名自动编号', async () => {
   const { directory, storage } = await setup(); const { entry } = await storage.save(draft(), options);
-  const items = await directory.getDirectoryHandle('items'); (await items.getFileHandle('新标题.txt', { create: true })).value = '未知文件';
+  const items = await (await directory.getDirectoryHandle('items')).getDirectoryHandle('未分类'); (await items.getFileHandle('新标题.txt', { create: true })).value = '未知文件';
   const next = await storage.edit(entry.id, { ...options, title: '新标题', ...confirmation(storage, entry) });
   assert.equal(next.content.originalFile, '新标题 (2).txt'); assert.deepEqual(next.source, entry.source); assert.equal(next.savedAt, entry.savedAt); assert.equal(next.editedAt, undefined);
-  const all = await filesIn(directory); assert.equal(all['/items/新标题 (2).txt'], entry.original); assert.equal(all['/items/重逢的片刻.txt'], undefined); assert.equal(all['/items/新标题.txt'], '未知文件');
+  const all = await filesIn(directory); assert.equal(all['/items/未分类/新标题 (2).txt'], entry.original); assert.equal(all['/items/未分类/重逢的片刻.txt'], undefined); assert.equal(all['/items/未分类/新标题.txt'], '未知文件');
 });
 
 test('改名写入或根索引失败时原名称仍可恢复，清理失败可以重载后重试', async () => {
@@ -156,12 +156,12 @@ test('改名写入或根索引失败时原名称仍可恢复，清理失败可�
   const next = await storage.edit(entry.id, { ...options, title: '新标题' }); assert(next.cleanup);
   const reopened = new VaultStorage({}); await reopened.attach(directory, false); assert.equal(reopened.entries[0].title, '新标题');
   directory.state.failRemove = ''; await reopened.cleanupContent(entry.id); assert.equal(reopened.entries[0].cleanup, undefined);
-  assert.equal((await filesIn(directory))['/items/重逢的片刻.txt'], undefined);
+  assert.equal((await filesIn(directory))['/items/未分类/重逢的片刻.txt'], undefined);
 });
 
 test('外部改写 TXT 会被读取，过期编辑、整理或删除及换库操作均拒绝覆盖', async () => {
   const { directory, storage } = await setup(); const { entry } = await storage.save(draft('原文'), options); const stale = confirmation(storage, entry);
-  (await (await directory.getDirectoryHandle('items')).getFileHandle(entry.content.originalFile)).value = '<button>外部修改</button>';
+  (await (await (await directory.getDirectoryHandle('items')).getDirectoryHandle(entry.content.folder)).getFileHandle(entry.content.originalFile)).value = '<button>外部修改</button>';
   const writes = directory.state.writes;
   await assert.rejects(storage.updateContent(entry.id, '过期草稿', stale), /别处修改/);
   await assert.rejects(storage.edit(entry.id, { ...options, title: '过期整理', ...stale }), /别处修改/);
@@ -176,7 +176,7 @@ test('删除必须确认，确认后移除该 TXT 与记录，其他收藏和分
   const before = await filesIn(directory); await assert.rejects(storage.delete(a.id, { ...confirmation(storage, a), confirmed: false }), /尚未确认/); assert.deepEqual(await filesIn(directory), before);
   assert.equal((await storage.delete(a.id, confirmation(storage, a))).cleanupPending, false);
   const reopened = new VaultStorage({}); await reopened.attach(directory, false); assert.equal(reopened.entries.length, 1); assert.equal(reopened.entries[0].id, b.id);
-  const all = await filesIn(directory); assert.equal(all[`/items/${a.content.originalFile}`], undefined); assert.equal(all[`/items/${b.content.originalFile}`], '保留');
+  const all = await filesIn(directory); assert.equal(all[`/items/${textFilePath(a)}`], undefined); assert.equal(all[`/items/${textFilePath(b)}`], '保留');
   assert.equal((await rootRecord(directory)).deleted.length, 0);
 });
 
@@ -185,7 +185,7 @@ test('删除索引写入失败不删 TXT，删除文件失败可重载后明确�
   directory.state.fail = '/tavern-vault.json'; await assert.rejects(storage.delete(entry.id, confirmation(storage, entry))); directory.state.fail = ''; assert.deepEqual(await filesIn(directory), before);
   directory.state.failRemove = '/重逢的片刻.txt'; assert.equal((await storage.delete(entry.id, confirmation(storage, entry))).cleanupPending, true);
   const reopened = new VaultStorage({}); await reopened.attach(directory, false); assert.equal(reopened.entries.length, 0); assert.equal(reopened.pendingDeleteCount, 1);
-  directory.state.failRemove = ''; assert.equal(await reopened.retryDeletions(), 0); assert.equal((await filesIn(directory))['/items/重逢的片刻.txt'], undefined);
+  directory.state.failRemove = ''; assert.equal(await reopened.retryDeletions(), 0); assert.equal((await filesIn(directory))['/items/未分类/重逢的片刻.txt'], undefined);
 });
 
 test('索引拒绝越界路径及重复 TXT 引用，损坏配置不会被保存覆盖', async () => {
@@ -300,17 +300,18 @@ async function legacyFixture(directory, schemaVersion, pendingCleanup = false) {
 }
 
 
-test('兼容读取旧库格式，刷新不迁移，确认整理后 items 仅剩标题 TXT', async () => {
+test('兼容读取旧库格式，刷新不迁移，确认整理后按分类保存标题 TXT', async () => {
   for (const version of [1, 2, 3]) {
     const { directory, storage } = await setup(); const fixture = await legacyFixture(directory, version, version === 2);
-    const marker = await directory.getFileHandle(META_FILE); const meta = JSON.parse(marker.value); delete meta.entries; delete meta.deleted; meta.schemaVersion = 1; marker.value = JSON.stringify(meta);
+    const marker = await directory.getFileHandle(META_FILE); const meta = JSON.parse(marker.value); delete meta.entries; delete meta.deleted; meta.schemaVersion = 1; meta.categories = meta.categories.map(({ folder, ...category }) => category);
+    await (await directory.getDirectoryHandle('items')).removeEntry('未分类'); marker.value = JSON.stringify(meta);
     const before = await filesIn(directory); await storage.load(); assert.equal(storage.legacyCount, 1); assert.deepEqual(await filesIn(directory), before);
     assert.equal(await storage.readPage(storage.entries[0], 1), fixture.pages[1]);
     await assert.rejects(storage.migrate({ confirmed: false }), /尚未确认/); assert.deepEqual(await filesIn(directory), before);
     const result = await storage.migrate({ confirmed: true, expectedLibraryId: storage.meta.libraryId }); assert.equal(result.converted, 1); assert.equal(result.cleanupPending, 0);
     assert.equal(storage.entries[0].original, fixture.original); assert.deepEqual(storage.entries[0].source, compactSource(fixture.record.source));
     assert.equal(storage.entries[0].savedAt, fixture.record.savedAt); assert.equal(storage.legacyCount, 0);
-    assert.deepEqual(Object.keys(await filesIn(directory)).sort(), ['/items/以前的收藏.txt', '/tavern-vault.json']);
+    assert.deepEqual(Object.keys(await filesIn(directory)).sort(), ['/items/未分类/以前的收藏.txt', '/tavern-vault.json']);
     const reopened = new VaultStorage({}); await reopened.attach(directory, false); assert.equal(reopened.entries[0].original, fixture.original);
   }
 });
@@ -328,7 +329,7 @@ test('旧目录中的未知文件保留，转换后的收藏可读，明确检�
   (await fixture.item.getFileHandle('important.dat', { create: true })).value = '用户额外放入的文件'; await storage.load();
   const result = await storage.migrate({ confirmed: true, expectedLibraryId: storage.meta.libraryId }); assert.equal(result.cleanupPending, 1);
   assert.equal((await fixture.item.getFileHandle('important.dat')).value, '用户额外放入的文件');
-  const reopened = new VaultStorage({}); await reopened.attach(directory, false); assert.equal(reopened.entries.length, 1); assert.equal(reopened.entries[0].schemaVersion, 4);
+  const reopened = new VaultStorage({}); await reopened.attach(directory, false); assert.equal(reopened.entries.length, 1); assert.equal(reopened.entries[0].schemaVersion, 5);
   await fixture.item.removeEntry('important.dat'); await reopened.cleanupContent(fixture.record.id); assert.equal(reopened.entries[0].cleanup, undefined);
 });
 
@@ -344,5 +345,127 @@ test('格式 3 已编辑内容集和待清理根副本也能合并为一个 TXT'
   const { directory, storage } = await setup(); const fixture = await legacyFixture(directory, 3, true);
   await storage.load(); const result = await storage.migrate({ confirmed: true, expectedLibraryId: storage.meta.libraryId });
   assert.equal(result.cleanupPending, 0); assert.equal(storage.entries[0].original, fixture.original);
-  assert.deepEqual(Object.keys(await filesIn(directory)).sort(), ['/items/以前的收藏.txt', '/tavern-vault.json']);
+  assert.deepEqual(Object.keys(await filesIn(directory)).sort(), ['/items/未分类/以前的收藏.txt', '/tavern-vault.json']);
+});
+
+
+test('同一分类的标题重名加序号，不同分类可各自使用原标题，空分类也有文件夹', async () => {
+  const { directory, storage } = await setup();
+  const a = (await storage.save(draft('剧情正文'), { ...options, newCategory: '剧情片段' })).entry;
+  const b = (await storage.save(draft('页面正文'), { ...options, newCategory: 'HTML 页面' })).entry;
+  const c = (await storage.save(draft('另一段剧情'), { ...options, categoryId: a.categoryId })).entry;
+  await storage.addCategory('空分类');
+  assert.equal(textFilePath(a), '剧情片段/重逢的片刻.txt');
+  assert.equal(textFilePath(b), 'HTML 页面/重逢的片刻.txt');
+  assert.equal(textFilePath(c), '剧情片段/重逢的片刻 (2).txt');
+  const items = await directory.getDirectoryHandle('items');
+  assert.equal((await items.getDirectoryHandle('空分类')).children.size, 0);
+  const reopened = new VaultStorage({}); await reopened.attach(directory, false);
+  assert.equal(reopened.entries.find(entry => entry.id === a.id).original, '剧情正文');
+  assert.equal(reopened.entries.find(entry => entry.id === b.id).original, '页面正文');
+});
+
+test('分类名特殊字符及截短重名会分配不同目录，不接管未知同名目录', async () => {
+  const { directory, storage } = await setup(); const items = await directory.getDirectoryHandle('items');
+  const unknown = await items.getDirectoryHandle('已有目录', { create: true });
+  (await unknown.getFileHandle('keep.txt', { create: true })).value = '未知文件';
+  await storage.load();
+  const categories = ['剧情/片段', '剧情\\片段', '已有目录', '长'.repeat(79) + '甲', '长'.repeat(79) + '乙'];
+  const entries = [];
+  for (const name of categories) entries.push((await storage.save(draft(name), { ...options, newCategory: name })).entry);
+  assert.equal(entries[0].content.folder, '剧情_片段'); assert.equal(entries[1].content.folder, '剧情_片段 (2)');
+  assert.equal(entries[2].content.folder, '已有目录 (2)');
+  assert.notEqual(entries[3].content.folder, entries[4].content.folder);
+  assert.equal((await unknown.getFileHandle('keep.txt')).value, '未知文件');
+  await storage.load(); assert.equal(storage.entries.length, categories.length);
+});
+
+test('确认改分类会移动 TXT，遇到目标同名文件加序号，不改变原文、来源或收藏时间', async () => {
+  const { directory, storage } = await setup();
+  const a = (await storage.save(draft('要移动的正文'), { ...options, newCategory: '剧情' })).entry;
+  const b = (await storage.save(draft('目标已有正文'), { ...options, newCategory: '信件' })).entry;
+  assert.equal(storage.previewPath(a.title, { entryId: a.id, categoryId: b.categoryId }), '信件/重逢的片刻 (2).txt');
+  const moved = await storage.edit(a.id, { ...options, categoryId: b.categoryId, ...confirmation(storage, a) });
+  assert.equal(textFilePath(moved), '信件/重逢的片刻 (2).txt'); assert.equal(moved.cleanup, undefined);
+  assert.equal(moved.savedAt, a.savedAt); assert.deepEqual(moved.source, a.source);
+  const files = await filesIn(directory);
+  assert.equal(files['/items/剧情/重逢的片刻.txt'], undefined);
+  assert.equal(files['/items/信件/重逢的片刻.txt'], '目标已有正文');
+  assert.equal(files['/items/信件/重逢的片刻 (2).txt'], '要移动的正文');
+  const reopened = new VaultStorage({}); await reopened.attach(directory, false);
+  assert.equal(reopened.entries.find(entry => entry.id === a.id).original, a.original);
+});
+
+test('跨分类移动的正文或索引写入失败时原文件仍在，旧位置清理失败可重载后重试', async () => {
+  for (const fail of ['/目标/重逢的片刻.txt', '/tavern-vault.json']) {
+    const { directory, storage } = await setup(); const target = await storage.addCategory('目标');
+    const { entry } = await storage.save(draft('原位置正文'), options); const before = await filesIn(directory);
+    directory.state.fail = fail;
+    await assert.rejects(storage.edit(entry.id, { ...options, categoryId: target }));
+    directory.state.fail = ''; assert.deepEqual(await filesIn(directory), before);
+  }
+  const { directory, storage } = await setup(); const target = await storage.addCategory('目标');
+  const { entry } = await storage.save(draft('原位置正文'), options);
+  directory.state.failRemove = '/未分类/重逢的片刻.txt';
+  const moved = await storage.edit(entry.id, { ...options, categoryId: target }); assert(moved.cleanup);
+  const reopened = new VaultStorage({}); await reopened.attach(directory, false); assert.equal(reopened.entries[0].content.folder, '目标');
+  directory.state.failRemove = ''; await reopened.cleanupContent(entry.id);
+  assert.equal((await filesIn(directory))['/items/未分类/重逢的片刻.txt'], undefined);
+  assert.equal((await filesIn(directory))['/items/目标/重逢的片刻.txt'], '原位置正文');
+});
+
+test('不同分类的同名 TXT 删除与重试仅影响选中的收藏，分类文件夹保留', async () => {
+  const { directory, storage } = await setup();
+  const a = (await storage.save(draft('删除正文'), { ...options, newCategory: '甲' })).entry;
+  const b = (await storage.save(draft('保留正文'), { ...options, newCategory: '乙' })).entry;
+  directory.state.failRemove = '/甲/重逢的片刻.txt';
+  assert.equal((await storage.delete(a.id, confirmation(storage, a))).cleanupPending, true);
+  const reopened = new VaultStorage({}); await reopened.attach(directory, false);
+  assert.equal(reopened.entries.length, 1); assert.equal(reopened.entries[0].id, b.id);
+  directory.state.failRemove = ''; assert.equal(await reopened.retryDeletions(), 0);
+  assert.equal((await filesIn(directory))['/items/乙/重逢的片刻.txt'], '保留正文');
+  assert.equal((await (await directory.getDirectoryHandle('items')).getDirectoryHandle('甲')).children.size, 0);
+});
+
+async function flatFixture() {
+  const directory = new MemoryDirectory(); const items = await directory.getDirectoryHandle('items', { create: true });
+  const original = '<button>旧版平铺正文</button>';
+  const entry = { schemaVersion: 4, id: 'old-flat', title: '旧版平铺', categoryId: UNFILED,
+    savedAt: '2026-10-23T01:00:00.000Z', updatedAt: '2026-10-23T01:00:00.000Z', source: compactSource(source()),
+    content: { originalFile: '旧版平铺.txt', originalSha256: await digest(original), pages: [{ label: '页面 1', kind: 'source' }], warnings: [] } };
+  (await items.getFileHandle('旧版平铺.txt', { create: true })).value = original;
+  (await directory.getFileHandle(META_FILE, { create: true })).value = JSON.stringify({ product: 'tavern-vault', schemaVersion: 2,
+    libraryId: 'flat-library', revision: 0, createdAt: entry.savedAt, categories: [{ id: UNFILED, name: '未分类' }], entries: [entry], deleted: [] });
+  const storage = new VaultStorage({}); await storage.attach(directory, false); return { directory, storage, entry, original };
+}
+
+test('v0.5 平铺库读取不搬动，明确整理后放入分类文件夹，来源和收藏时间保留', async () => {
+  const { directory, storage, entry, original } = await flatFixture();
+  const before = await filesIn(directory); await storage.load(); assert.deepEqual(await filesIn(directory), before); assert.equal(storage.legacyCount, 1);
+  assert.equal(await storage.readPage(storage.entries[0], 0), original);
+  const result = await storage.migrate({ confirmed: true, expectedLibraryId: storage.meta.libraryId });
+  assert.equal(result.converted, 1); assert.equal(result.cleanupPending, 0); assert.equal(storage.entries[0].schemaVersion, 5);
+  assert.equal(storage.entries[0].savedAt, entry.savedAt); assert.deepEqual(storage.entries[0].source, entry.source);
+  assert.deepEqual(Object.keys(await filesIn(directory)).sort(), ['/items/未分类/旧版平铺.txt', '/tavern-vault.json']);
+  assert.equal((await filesIn(directory))['/items/未分类/旧版平铺.txt'], original);
+});
+
+test('旧平铺 TXT 移动提交失败不丢原文件，未整理时也可以直接删除', async () => {
+  const { directory, storage } = await flatFixture(); await storage.addCategory('未分类');
+  const before = await filesIn(directory); directory.state.fail = '/tavern-vault.json';
+  await assert.rejects(storage.migrate({ confirmed: true, expectedLibraryId: storage.meta.libraryId }));
+  directory.state.fail = ''; assert.deepEqual(await filesIn(directory), before);
+  assert.equal((await storage.delete(storage.entries[0].id, confirmation(storage, storage.entries[0]))).cleanupPending, false);
+  assert.deepEqual(Object.keys(await filesIn(directory)), ['/tavern-vault.json']);
+});
+
+test('分类目录越界、重复目录与收藏的目录分类不一致时拒绝写入', async () => {
+  const { directory, storage } = await setup(); const { entry } = await storage.save(draft(), options);
+  for (const folder of ['../other', 'nested/folder', '..', '']) {
+    assert.throws(() => validateEntry({ ...entry, content: { ...entry.content, folder } }, entry.id), /分类文件夹/);
+    assert.throws(() => validateEntry({ ...entry, cleanup: { files: [{ name: 'keep.txt', folder, sha256: 'a'.repeat(64) }] } }, entry.id), /清理/);
+  }
+  const meta = await rootRecord(directory);
+  assert.throws(() => validateMeta({ ...meta, categories: [...meta.categories, { id: 'other', name: '另一分类', folder: '未分类' }] }), /分类文件夹/);
+  assert.throws(() => validateMeta({ ...meta, entries: [{ ...meta.entries[0], content: { ...meta.entries[0].content, folder: '另一分类' } }] }), /分类文件夹不一致/);
 });

@@ -1,4 +1,4 @@
-export const VERSION = '0.5.0';
+export const VERSION = '0.6.0';
 export const PRODUCT = 'tavern-vault';
 export const SCHEMA_VERSION = 1;
 export const UNFILED = 'uncategorized';
@@ -41,6 +41,17 @@ function safeFileBase(value) {
   return typeof value === 'string' && value.length > 0 && titleFileBase(value) === value;
 }
 
+export function safeFolderName(value) {
+  if (safeFileBase(value)) return true;
+  if (typeof value !== 'string' || value.length > 150) return false;
+  const suffix = value.match(/^(.*) \(([2-9]|[1-9]\d{1,4})\)$/u);
+  return Boolean(suffix && safeFileBase(suffix[1]));
+}
+
+export function textFilePath(entry) {
+  return `${entry.content.folder ? `${entry.content.folder}/` : ''}${entry.content.originalFile}`;
+}
+
 export function contentFileNames(fileBase, pageCount) {
   return {
     originalFile: fileBase == null ? 'original.txt' : `${fileBase}.txt`,
@@ -73,22 +84,27 @@ export async function digest(text) {
 }
 
 export function validateMeta(value) {
-  assert(value?.product === PRODUCT && [1, 2].includes(value.schemaVersion),
+  assert(value?.product === PRODUCT && [1, 2, 3].includes(value.schemaVersion),
     '这个文件夹不是受支持的储藏库，或文件格式版本不同。请另选文件夹。');
   assert(safeId(value.libraryId) && Number.isSafeInteger(value.revision) && value.revision >= 0,
     '收藏库配置损坏，已停止写入；原文件保持不变。');
   assert(Array.isArray(value.categories), '收藏库分类记录损坏，已停止写入。');
   const ids = new Set();
   const names = new Set();
+  const folders = new Set();
   for (const category of value.categories) {
     assert(category && safeId(category.id) && typeof category.name === 'string' &&
       category.name.trim().length > 0 && category.name.length <= 80 &&
       !ids.has(category.id) && !names.has(normalized(category.name)), '收藏库中存在损坏或重复的分类。');
     ids.add(category.id);
     names.add(normalized(category.name));
+    if (category.folder != null) {
+      assert(safeFolderName(category.folder) && !folders.has(normalized(category.folder)), '分类文件夹无效或重名，已停止写入。');
+      folders.add(normalized(category.folder));
+    }
   }
   assert(ids.has(UNFILED), '收藏库缺少“未分类”记录，已停止写入。');
-  if (value.schemaVersion === 2) {
+  if (value.schemaVersion >= 2) {
     assert(Array.isArray(value.entries) && Array.isArray(value.deleted), '收藏库的文件清单损坏，已停止写入。');
     const entryIds = new Set();
     const files = new Set();
@@ -98,21 +114,23 @@ export function validateMeta(value) {
       entryIds.add(record.id);
     }
     for (const record of value.entries) {
-      assert(record.schemaVersion === 4 && !files.has(normalized(record.content.originalFile)), '收藏库中存在重复或无效的 TXT 文件名。');
-      files.add(normalized(record.content.originalFile));
+      assert((record.schemaVersion === 4 || value.schemaVersion === 3 && record.schemaVersion === 5) &&
+        !files.has(normalized(textFilePath(record))), '收藏库中存在重复或无效的 TXT 文件名。');
+      if (record.schemaVersion === 5) assert(value.categories.some(category => category.id === record.categoryId && category.folder === record.content.folder), '收藏与分类文件夹不一致。');
+      files.add(normalized(textFilePath(record)));
     }
   }
   return value;
 }
 
 export function validateEntry(value, directoryId) {
-  assert([1, 2, 3, 4].includes(value?.schemaVersion) && safeId(value.id) && value.id === directoryId,
+  assert([1, 2, 3, 4, 5].includes(value?.schemaVersion) && safeId(value.id) && value.id === directoryId,
     '收藏记录的编号或格式无效。');
   assert(typeof value.title === 'string' && value.title.length <= 160 && safeId(value.categoryId),
     '收藏的标题或分类无效。');
   assert(value.source && typeof value.source.chatId === 'string' &&
     Number.isSafeInteger(value.source.messageId) && value.source.messageId >= 0 &&
-    (value.schemaVersion === 4 ? typeof value.source.characterName === 'string' :
+    (value.schemaVersion >= 4 ? typeof value.source.characterName === 'string' :
       Number.isSafeInteger(value.source.swipeId) && value.source.swipeId >= 0 && typeof value.source.speakerName === 'string'), '收藏来源记录不完整。');
   if (value.source.selection != null) {
     const selection = value.source.selection;
@@ -126,11 +144,13 @@ export function validateEntry(value, directoryId) {
   assert(value.content && /^[a-f0-9]{64}$/.test(value.content.originalSha256) &&
     Array.isArray(value.content.pages) && value.content.pages.length <= 100, '收藏内容索引无效。');
   assert(Array.isArray(value.content.warnings) && value.content.warnings.every(note => typeof note === 'string'), '收藏页面说明记录无效。');
-  if (value.schemaVersion === 4) {
+  if (value.schemaVersion >= 4) {
     assert(safeTextFile(value.content.originalFile) && value.content.storageId == null && value.content.renderedFile == null &&
       value.content.pages.every(page => page && typeof page.label === 'string' && page.file == null), '收藏的 TXT 文件索引无效。');
+    assert(value.schemaVersion === 5 ? safeFolderName(value.content.folder) : value.content.folder == null, '收藏的分类文件夹无效。');
     if (value.cleanup != null) {
-      assert(Array.isArray(value.cleanup.files) && value.cleanup.files.every(file => safeTextFile(file.name) && /^[a-f0-9]{64}$/.test(file.sha256)), '收藏清理记录无效。');
+      assert(Array.isArray(value.cleanup.files) && value.cleanup.files.every(file => safeTextFile(file.name) &&
+        (file.folder == null || value.schemaVersion === 5 && safeFolderName(file.folder)) && /^[a-f0-9]{64}$/.test(file.sha256)), '收藏清理记录无效。');
       if (value.cleanup.legacy != null) {
         assert([1, 2, 3].includes(value.cleanup.legacy.schemaVersion) && value.cleanup.legacy.id === value.id, '旧收藏清理编号无效。');
         validateEntry(value.cleanup.legacy, value.id);
